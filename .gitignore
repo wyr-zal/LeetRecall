@@ -1,0 +1,16 @@
+.idea/
+.vscode/
+.DS_Store
+CONTEXT.md
+.env
+.leetrecall-state/
+.omx/
+backups/
+*.log
+
+leet-recall-web/node_modules/
+leet-recall-web/dist/
+leet-recall-web/coverage/
+leet-recall-web/*.tsbuildinfo
+
+leet-recall-server/target/
