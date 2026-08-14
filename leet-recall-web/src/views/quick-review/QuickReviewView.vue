@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onActivated, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { BrainCircuit, FileText, NotebookPen } from 'lucide-vue-next'
 import { useQuickReviewStore } from '@/stores/quickReview'
@@ -36,8 +36,16 @@ const {
   currentDraft,
 } = storeToRefs(store)
 const activeTab = ref<StudyTab>('description')
+let firstActivation = true
 
 onMounted(() => store.loadQueue())
+onActivated(() => {
+  if (firstActivation) {
+    firstActivation = false
+    return
+  }
+  void store.refreshQueue()
+})
 
 watch(currentProblemId, () => {
   activeTab.value = 'description'

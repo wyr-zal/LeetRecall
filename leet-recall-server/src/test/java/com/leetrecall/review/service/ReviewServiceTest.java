@@ -9,6 +9,7 @@ import com.leetrecall.problem.mapper.ProblemMapper;
 import com.leetrecall.problem.mapper.ProblemMistakeMapper;
 import com.leetrecall.problem.mapper.ProblemTagMapper;
 import com.leetrecall.problem.mapper.RecallQuestionMapper;
+import com.leetrecall.problem.vo.ProblemTagNameVO;
 import com.leetrecall.review.dto.ReviewSubmitDTO;
 import com.leetrecall.review.entity.ProblemProgress;
 import com.leetrecall.review.entity.ReviewRecord;
@@ -70,7 +71,14 @@ class ReviewServiceTest {
         ReviewQueueRow completed = queueRow(8L, true, MasteryLevel.KNOWN);
         when(problemMapper.selectTodayReviewRows(any(LocalDateTime.class), any(LocalDateTime.class)))
                 .thenReturn(List.of(pending, completed));
-        when(problemTagMapper.selectTagNames(any(Long.class), eq(4))).thenReturn(List.of("递归"));
+        ProblemTagNameVO pendingTag = new ProblemTagNameVO();
+        pendingTag.setProblemId(1L);
+        pendingTag.setName("递归");
+        ProblemTagNameVO completedTag = new ProblemTagNameVO();
+        completedTag.setProblemId(8L);
+        completedTag.setName("树");
+        when(problemTagMapper.selectTagNamesByProblemIds(List.of(1L, 8L)))
+                .thenReturn(List.of(pendingTag, completedTag));
 
         var result = reviewService.getTodayQueue();
 

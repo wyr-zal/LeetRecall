@@ -1,6 +1,7 @@
 package com.leetrecall.externalimport.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,7 +16,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -30,47 +30,53 @@ public class ExternalImportValidator {
             "coreIdea", "hint", "mistakes", "fullCode", "keyCode", "recallQuestions", "dictation");
     private static final Set<String> QUESTION_FIELDS = Set.of("question", "answer");
     private static final Set<String> DICTATION_FIELDS = Set.of("language", "templateCode", "answers", "keywords");
-    private static final Set<String> FORBIDDEN_FIELDS = Set.of("sourceRefs", "sourceTrace", "sourceAssociations", "provider", "model",
-            "prompt", "sourceUrl", "solutionUrl", "referenceUrls", "author", "platform");
     private static final Pattern BLANK_PATTERN = Pattern.compile("\\{\\{([a-z][a-z0-9_]*)}}");
     private static final Pattern CLASS_PATTERN = Pattern.compile("\\bclass\\s+([A-Za-z_$][A-Za-z0-9_$]*)");
     private static final Pattern METHOD_PATTERN = Pattern.compile("\\bpublic\\s+(?:static\\s+)?(?:<[^>]+>\\s*)?[A-Za-z_$][A-Za-z0-9_$<>\\[\\], ?]*\\s+([A-Za-z_$][A-Za-z0-9_$]*)\\s*\\(([^)]*)\\)");
-    private static final Set<String> GENERIC_QUESTIONS = Set.of("这题怎么做", "这题的核心思路是什么", "本题的核心思路是什么", "时间复杂度是多少", "有什么易错点", "这题难点是什么");
+    private static final Pattern FENCE_PATTERN = Pattern.compile("^\\s{0,3}(`{3,}|~{3,})(.*)$");
+    private static final int MAX_DESCRIPTION_LENGTH = 100_000;
 
     private final ObjectMapper objectMapper;
     private final JavaCompileService javaCompileService;
 
     public ValidationResult validateRaw(String raw, Hot100Manifest.Hot100Problem expected, Hot100OfficialSource.OfficialProblem official) {
-        return validateRaw(raw, expected, official, Set.of());
-    }
-
-    public ValidationResult validateRaw(String raw, Hot100Manifest.Hot100Problem expected,
-                                        Hot100OfficialSource.OfficialProblem official, Set<String> otherQuestionKeys) {
         List<String> errors = new ArrayList<>();
-        if (raw == null || raw.isBlank() || !raw.strip().startsWith("{") || raw.strip().startsWith("```")) {
-            return new ValidationResult(null, List.of("只接受纯 JSON 对象，不能包含 Markdown 代码围栏或说明文字"), false, "");
+        if (raw == null || raw.isBlank()) {
+            return new ValidationResult(null, List.of("JSON 内容为空：请粘贴或选择一个 JSON 文件"), false, "");
+        }
+        String stripped = raw.strip();
+        if (stripped.startsWith("```") || stripped.startsWith("~~~")) {
+            return new ValidationResult(null, List.of("JSON 第 1 行：检测到 Markdown 代码围栏；请删除开头和结尾的 ```json / ```，只保留 { ... }"), false, "");
+        }
+        if (!stripped.startsWith("{")) {
+            return new ValidationResult(null, List.of("JSON 根节点必须是对象：首个非空字符应为 {，实际为 “" + stripped.charAt(0) + "”"), false, "");
         }
         try {
-            JsonNode root = objectMapper.readTree(raw);
-            validateShape(root, errors);
+            JsonNode root = objectMapper.reader()
+                    .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                    .readTree(raw);
+            if (root == null || !root.isObject()) {
+                return new ValidationResult(null, List.of("JSON 根节点必须是对象 { ... }"), false, "");
+            }
             ExternalImportPayload payload = objectMapper.readerFor(ExternalImportPayload.class)
+                    .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
                     .without(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
                     .readValue(root);
-            return validate(payload, errors, expected, official, otherQuestionKeys);
-        } catch (Exception exception) {
-            return new ValidationResult(null, List.of("JSON 格式不合法或字段类型不正确"), false, "");
+            return validate(payload, errors, expected, official);
+        } catch (java.io.IOException exception) {
+            String message = exception instanceof JsonProcessingException jsonException
+                    ? jsonError(jsonException)
+                    : "JSON 读取失败：" + exception.getMessage();
+            return new ValidationResult(null, List.of(message), false, "");
         }
     }
 
     public ValidationResult validate(ExternalImportPayload payload, Hot100Manifest.Hot100Problem expected,
                                      Hot100OfficialSource.OfficialProblem official) {
-        return validate(payload, new ArrayList<>(), expected, official, Set.of());
+        return validate(payload, new ArrayList<>(), expected, official);
     }
 
-    /**
-     * 草稿只保留格式白名单内的数据。字段非法时仍会在本次校验响应中报告，
-     * 但来源、模型、提示词等值不会进入数据库。
-     */
+    /** 草稿只保留导入白名单字段，额外字段会被忽略且不会进入数据库。 */
     public String sanitizeForStorage(String raw) {
         if (raw == null || raw.isBlank()) return null;
         try {
@@ -103,31 +109,28 @@ public class ExternalImportValidator {
     }
 
     private ValidationResult validate(ExternalImportPayload payload, List<String> errors,
-                                      Hot100Manifest.Hot100Problem expected, Hot100OfficialSource.OfficialProblem official,
-                                      Set<String> otherQuestionKeys) {
+                                      Hot100Manifest.Hot100Problem expected, Hot100OfficialSource.OfficialProblem official) {
         if (payload == null) return new ValidationResult(null, List.of("缺少 JSON 内容"), false, "");
-        if (!Integer.valueOf(expected.leetcodeNumber()).equals(payload.leetcodeNumber())) errors.add("题号必须与所选 Hot100 题目一致");
-        if (!expected.title().equals(payload.title())) errors.add("题目标题必须与所选 Hot100 题目一致");
-        if (expected.difficulty() != payload.difficulty()) errors.add("题目难度必须与所选 Hot100 题目一致");
-        if (!sameText(official.descriptionMarkdown(), payload.descriptionMarkdown())) errors.add("题目描述必须原样使用系统任务包中的中文题面");
-        listSize(payload.tags(), 1, 10, "标签", errors);
+        if (!Integer.valueOf(expected.leetcodeNumber()).equals(payload.leetcodeNumber())) {
+            errors.add("leetcodeNumber：必须为 " + expected.leetcodeNumber() + "，实际为 " + displayValue(payload.leetcodeNumber()));
+        }
+        if (!expected.title().equals(payload.title())) {
+            errors.add("title：必须为“" + expected.title() + "”，实际为 " + displayValue(payload.title()));
+        }
+        if (expected.difficulty() != payload.difficulty()) {
+            errors.add("difficulty：必须为 " + expected.difficulty() + "，实际为 " + displayValue(payload.difficulty()));
+        }
+        validateDescriptionMarkdown(payload.descriptionMarkdown(), errors);
+        validateTextList(payload.tags(), 50, "tags", errors);
         required(payload.coreIdea(), "缺少核心思路", errors);
         required(payload.hint(), "缺少提示", errors);
-        if (payload.hint() != null && payload.hint().length() > 100) errors.add("提示不能超过 100 个字符");
-        listSize(payload.mistakes(), 2, 4, "易错点", errors);
-        listText(payload.mistakes(), 6, 500, "易错点", errors);
+        validateTextList(payload.mistakes(), 500, "mistakes", errors);
         required(payload.fullCode(), "缺少完整 Java 代码", errors);
         required(payload.keyCode(), "缺少关键代码", errors);
-        if (!blank(payload.fullCode()) && !blank(payload.keyCode()) && !payload.fullCode().contains(payload.keyCode())) {
-            errors.add("关键代码必须是完整 Java 代码中的连续片段");
-        }
-        if (!blank(payload.fullCode()) && (payload.fullCode().contains("TODO") || payload.fullCode().contains("{{"))) {
-            errors.add("完整 Java 代码不能包含 TODO 或默写占位符");
-        }
         if (!blank(payload.fullCode()) && containsDisallowedTopLevelDeclaration(payload.fullCode())) {
-            errors.add("完整 Java 代码不能包含 package 或 native 声明");
+            errors.add("fullCode：不能包含 package 或 native 声明");
         }
-        validateQuestions(payload.recallQuestions(), otherQuestionKeys, errors);
+        validateQuestions(payload.recallQuestions(), errors);
         validateDictation(payload, errors);
         validateSignature(payload.fullCode(), official.javaStarterCode(), errors);
         JavaCompileService.CompileResult compileResult = blank(payload.fullCode())
@@ -148,30 +151,6 @@ public class ExternalImportValidator {
         return payload.recallQuestions().stream().map(ExternalImportPayload.RecallQuestion::answer).toList();
     }
 
-    private void validateShape(JsonNode root, List<String> errors) {
-        if (root == null || !root.isObject()) {
-            errors.add("JSON 根节点必须是对象");
-            return;
-        }
-        validateFieldNames(root, ROOT_FIELDS, "根对象", errors);
-        JsonNode questions = root.get("recallQuestions");
-        if (questions != null && questions.isArray()) for (JsonNode question : questions) validateFieldNames(question, QUESTION_FIELDS, "recallQuestions 项", errors);
-        JsonNode dictation = root.get("dictation");
-        if (dictation != null) validateFieldNames(dictation, DICTATION_FIELDS, "dictation", errors);
-    }
-
-    private void validateFieldNames(JsonNode node, Set<String> allowed, String scope, List<String> errors) {
-        if (!node.isObject()) {
-            errors.add(scope + "必须是对象");
-            return;
-        }
-        node.fieldNames().forEachRemaining(field -> {
-            if (!allowed.contains(field)) {
-                errors.add((FORBIDDEN_FIELDS.contains(field) ? "禁止保存来源或模型字段：" : "不允许的字段：") + field);
-            }
-        });
-    }
-
     private void copyFields(ObjectNode source, ObjectNode target, Set<String> allowed) {
         for (String field : allowed) {
             JsonNode value = source.get(field);
@@ -179,50 +158,63 @@ public class ExternalImportValidator {
         }
     }
 
-    private void validateQuestions(List<ExternalImportPayload.RecallQuestion> questions, Set<String> otherQuestionKeys,
-                                   List<String> errors) {
-        listSize(questions, 3, 5, "回忆复习问答", errors);
-        if (questions == null) return;
-        Set<String> normalized = new HashSet<>();
-        for (ExternalImportPayload.RecallQuestion question : questions) {
-            if (question == null || blank(question.question()) || blank(question.answer())) {
-                errors.add("每组回忆复习问答都必须有 question 和 answer");
+    private void validateQuestions(List<ExternalImportPayload.RecallQuestion> questions, List<String> errors) {
+        if (questions == null || questions.isEmpty()) {
+            errors.add("recallQuestions：至少需要 1 组问答，否则回忆复习页面没有可展示内容");
+            return;
+        }
+        for (int index = 0; index < questions.size(); index++) {
+            ExternalImportPayload.RecallQuestion question = questions.get(index);
+            int number = index + 1;
+            if (question == null) {
+                errors.add("recallQuestions[" + index + "]：必须是包含 question 和 answer 的对象");
                 continue;
             }
-            if (question.question().length() < 8 || question.question().length() > 180 || question.answer().length() > 800) {
-                errors.add("回忆问题长度应为 8 到 180 字，答案不能超过 800 字");
-            }
-            String normalizedQuestion = normalizeQuestion(question.question());
-            if (!normalized.add(normalizedQuestion)) errors.add("同一题内不能有重复的回忆问题");
-            if (otherQuestionKeys.contains(normalizedQuestion)) errors.add("回忆问题不能与已导入的其他题目重复：" + question.question());
-            if (GENERIC_QUESTIONS.contains(normalizedQuestion)) errors.add("回忆问题不能使用通用套话：" + question.question());
+            if (blank(question.question())) errors.add("第 " + number + " 组回忆问答：question 不能为空");
+            if (blank(question.answer())) errors.add("第 " + number + " 组回忆问答：answer 不能为空");
+            if (blank(question.question()) || blank(question.answer())) continue;
+            if (question.question().length() > 500) errors.add("第 " + number + " 组回忆问答：question 当前 " + question.question().length() + " 字，数据库最多保存 500 字");
         }
     }
 
     private void validateDictation(ExternalImportPayload payload, List<String> errors) {
         ExternalImportPayload.Dictation dictation = payload.dictation();
-        if (dictation == null) { errors.add("缺少默写内容"); return; }
-        if (!Language.JAVA.name().equals(dictation.language())) errors.add("默写语言必须为 JAVA");
-        if (blank(dictation.templateCode()) || dictation.answers() == null) { errors.add("默写模板和答案不能为空"); return; }
+        if (dictation == null) { errors.add("dictation：缺少默写内容对象"); return; }
+        if (!Language.JAVA.name().equals(dictation.language())) errors.add("dictation.language：必须为 JAVA，实际为 " + displayValue(dictation.language()));
+        if (blank(dictation.templateCode())) errors.add("dictation.templateCode：不能为空");
+        if (dictation.answers() == null) errors.add("dictation.answers：不能为空");
+        if (blank(dictation.templateCode()) || dictation.answers() == null) return;
         Matcher matcher = BLANK_PATTERN.matcher(dictation.templateCode());
         Set<String> keys = new LinkedHashSet<>();
         int count = 0;
         while (matcher.find()) {
             count++;
-            if (!keys.add(matcher.group(1))) errors.add("每个默写空位只能出现一次");
+            if (!keys.add(matcher.group(1))) errors.add("dictation.templateCode：占位符 {{" + matcher.group(1) + "}} 重复出现，每个空位只能出现一次");
         }
-        if (count < 3 || count > 6) errors.add("默写必须包含 3 到 6 个空位");
-        if (!keys.equals(dictation.answers().keySet())) errors.add("默写空位和答案键集合必须完全一致");
+        if (count == 0) errors.add("dictation.templateCode：没有识别到 {{blank_1}} 形式的默写空位");
+        if (!keys.equals(dictation.answers().keySet())) {
+            Set<String> missing = new LinkedHashSet<>(keys);
+            missing.removeAll(dictation.answers().keySet());
+            Set<String> extra = new LinkedHashSet<>(dictation.answers().keySet());
+            extra.removeAll(keys);
+            errors.add("dictation.answers：键与模板空位不一致"
+                    + (missing.isEmpty() ? "" : "，缺少 " + formatBlankKeys(missing))
+                    + (extra.isEmpty() ? "" : "，多出 " + formatBlankKeys(extra)));
+        }
         for (Map.Entry<String, String> entry : dictation.answers().entrySet()) {
-            if (blank(entry.getKey()) || blank(entry.getValue()) || entry.getValue().length() > 240) {
-                errors.add("默写答案必须是长度不超过 240 的非空 Java 片段");
-                break;
-            }
+            if (blank(entry.getKey())) errors.add("dictation.answers：不能包含空键名");
+            else if (blank(entry.getValue())) errors.add("dictation.answers." + entry.getKey() + "：答案不能为空");
         }
-        if (dictation.keywords() == null || dictation.keywords().isEmpty() || dictation.keywords().size() > 10) errors.add("默写关键词数量必须为 1 到 10 个");
+        validateTextList(dictation.keywords(), 50, "dictation.keywords", errors);
         String restored = dictation.templateCode();
-        for (String key : keys) restored = restored.replace("{{" + key + "}}", dictation.answers().get(key));
-        if (!restored.equals(payload.fullCode())) errors.add("默写答案回填后必须逐字符恢复完整 Java 代码");
+        for (String key : keys) {
+            String answer = dictation.answers().get(key);
+            if (answer != null) restored = restored.replace("{{" + key + "}}", answer);
+        }
+        if (!restored.equals(payload.fullCode())) {
+            int difference = firstDifference(restored, payload.fullCode());
+            errors.add("dictation：答案回填后与 fullCode 不一致，首个差异位于 " + lineAndColumn(restored, difference));
+        }
     }
 
     private void validateSignature(String fullCode, String starterCode, List<String> errors) {
@@ -303,20 +295,102 @@ public class ExternalImportValidator {
         return Pattern.compile("(?m)^\\s*package\\s+|\\bnative\\b").matcher(withoutCommentsAndStrings).find();
     }
 
-    private void listSize(List<?> values, int min, int max, String name, List<String> errors) {
-        if (values == null || values.size() < min || values.size() > max) errors.add(name + "数量必须为 " + min + " 到 " + max + " 条");
-    }
-
-    private void listText(List<String> values, int minLength, int maxLength, String name, List<String> errors) {
+    private void validateTextList(List<String> values, int maxLength, String name, List<String> errors) {
         if (values == null) return;
-        if (values.stream().anyMatch(value -> blank(value) || value.length() < minLength || value.length() > maxLength)) errors.add(name + "每条长度必须为 " + minLength + " 到 " + maxLength + " 字");
+        for (int index = 0; index < values.size(); index++) {
+            String value = values.get(index);
+            if (blank(value)) errors.add(name + "[" + index + "]：不能为空");
+            else if (value.length() > maxLength) {
+                errors.add(name + "[" + index + "]：当前 " + value.length() + " 字，数据库最多保存 " + maxLength + " 字");
+            }
+        }
     }
 
     private void required(String value, String error, List<String> errors) { if (blank(value)) errors.add(error); }
     private boolean blank(String value) { return value == null || value.isBlank(); }
-    private boolean sameText(String first, String second) { return normalizeText(first).equals(normalizeText(second)); }
-    private String normalizeText(String text) { return text == null ? "" : text.replace("\r\n", "\n").strip(); }
-    private String normalizeQuestion(String text) { return text == null ? "" : text.replaceAll("[？?！!。,.，、\\s]", "").strip(); }
+    private String jsonError(JsonProcessingException exception) {
+        String location = exception.getLocation() == null
+                ? ""
+                : "第 " + exception.getLocation().getLineNr() + " 行第 " + exception.getLocation().getColumnNr() + " 列：";
+        String path = exception instanceof JsonMappingException mapping && !mapping.getPath().isEmpty()
+                ? mapping.getPath().stream()
+                        .map(reference -> reference.getFieldName() != null ? reference.getFieldName() : "[" + reference.getIndex() + "]")
+                        .collect(java.util.stream.Collectors.joining("."))
+                : "";
+        String detail = exception.getOriginalMessage();
+        if (!path.isBlank()) return "JSON 字段 " + path + " 类型不正确：" + detail;
+        return "JSON " + location + detail;
+    }
+
+    /**
+     * 题面不再与任务包逐块比对。段落、列表、标题、分隔线和来源链接的增删不会影响
+     * 系统读取 JSON 或 Markdown 渲染，因此允许外部 AI 自由改写；这里只拦截空内容、
+     * 超长内容和未闭合代码围栏这类会让最终页面明显失真的问题。
+     */
+    private void validateDescriptionMarkdown(String markdown, List<String> errors) {
+        if (blank(markdown)) {
+            errors.add("descriptionMarkdown：题目描述不能为空");
+            return;
+        }
+        if (markdown.length() > MAX_DESCRIPTION_LENGTH) {
+            errors.add("descriptionMarkdown：当前 " + markdown.length() + " 字，最多允许 " + MAX_DESCRIPTION_LENGTH + " 字");
+        }
+        String[] lines = markdown.replace("\r\n", "\n").split("\n", -1);
+        Character openingCharacter = null;
+        int openingLength = 0;
+        int openingLine = 0;
+        String openingMarker = null;
+        for (int index = 0; index < lines.length; index++) {
+            Matcher fence = FENCE_PATTERN.matcher(lines[index]);
+            if (!fence.matches()) continue;
+            String marker = fence.group(1);
+            String suffix = fence.group(2);
+            if (openingCharacter == null) {
+                openingCharacter = marker.charAt(0);
+                openingLength = marker.length();
+                openingLine = index + 1;
+                openingMarker = marker;
+            } else if (marker.charAt(0) == openingCharacter && marker.length() >= openingLength && suffix.isBlank()) {
+                openingCharacter = null;
+                openingLength = 0;
+                openingLine = 0;
+                openingMarker = null;
+            }
+        }
+        if (openingCharacter != null) {
+            errors.add("descriptionMarkdown 第 " + openingLine + " 行：代码围栏 " + openingMarker + " 未闭合，请在代码块末尾补上同类型围栏");
+        }
+    }
+
+    private int firstDifference(String left, String right) {
+        if (left == null || right == null) return 0;
+        int limit = Math.min(left.length(), right.length());
+        for (int index = 0; index < limit; index++) if (left.charAt(index) != right.charAt(index)) return index;
+        return limit;
+    }
+
+    private String lineAndColumn(String text, int index) {
+        if (text == null) return "第 1 行第 1 列";
+        int line = 1;
+        int column = 1;
+        for (int current = 0; current < Math.min(index, text.length()); current++) {
+            if (text.charAt(current) == '\n') { line++; column = 1; }
+            else column++;
+        }
+        return "第 " + line + " 行第 " + column + " 列";
+    }
+
+    private String formatBlankKeys(Set<String> keys) {
+        return keys.stream().map(key -> "{{" + key + "}}").collect(java.util.stream.Collectors.joining("、"));
+    }
+
+    private String displayValue(Object value) {
+        if (value == null) return "（缺失）";
+        String text = value.toString();
+        if (text.length() > 80) text = text.substring(0, 77) + "...";
+        return "“" + text + "”";
+    }
+
     /**
      * 结构校验不需要字符串或字符字面量的内容；逐字符屏蔽它们，避免把 URL 的 //
      * 或字符常量中的大括号误解为注释和代码块边界。
@@ -358,8 +432,6 @@ public class ExternalImportValidator {
         }
         return sanitized.toString();
     }
-
-    public String questionKey(String question) { return normalizeQuestion(question); }
 
     public record ValidationResult(ExternalImportPayload payload, List<String> errors, boolean compilePassed, String compileOutput) {
         public boolean ready() { return payload != null && errors.isEmpty() && compilePassed; }

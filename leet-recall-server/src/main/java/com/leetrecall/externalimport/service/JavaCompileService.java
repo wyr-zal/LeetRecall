@@ -1,11 +1,22 @@
 package com.leetrecall.externalimport.service;
 
+import org.eclipse.jdt.core.compiler.batch.BatchCompiler;
+import org.eclipse.jdt.core.compiler.CompilationProgress;
+
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
 
 import org.springframework.stereotype.Service;
@@ -14,6 +25,15 @@ import org.springframework.stereotype.Service;
 public class JavaCompileService {
     private static final Pattern CLASS_PATTERN = Pattern.compile("\\bclass\\s+(\\w+)");
     private static final Pattern PUBLIC_CLASS_PATTERN = Pattern.compile("\\bpublic\\s+class\\s+(\\w+)");
+    private final String javacCommand;
+
+    public JavaCompileService() {
+        this("javac");
+    }
+
+    JavaCompileService(String javacCommand) {
+        this.javacCommand = javacCommand;
+    }
 
     public CompileResult compile(String code) {
         if (code == null || code.isBlank()) return new CompileResult(false, "Java 代码为空");
@@ -24,18 +44,7 @@ public class JavaCompileService {
             Path sourceFile = directory.resolve(primaryClass(code) + ".java");
             Path outputFile = directory.resolve("javac-output.txt");
             Files.writeString(sourceFile, source, StandardCharsets.UTF_8);
-            Process process = new ProcessBuilder("javac", "--release", "21", "-proc:none", "-Xlint:none", "-d", directory.toString(), sourceFile.toString())
-                    .redirectErrorStream(true)
-                    .redirectOutput(outputFile.toFile())
-                    .start();
-            boolean finished = process.waitFor(8, TimeUnit.SECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                process.waitFor(1, TimeUnit.SECONDS);
-                return new CompileResult(false, "Java 编译超过 8 秒限制");
-            }
-            String output = Files.readString(outputFile, StandardCharsets.UTF_8).strip();
-            return new CompileResult(process.exitValue() == 0, limitOutput(output, directory));
+            return compileWithJavacOrEcj(sourceFile, directory, outputFile);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             return new CompileResult(false, "Java 编译被中断");
@@ -50,6 +59,67 @@ public class JavaCompileService {
                 } catch (IOException ignored) { }
             }
         }
+    }
+
+    private CompileResult compileWithJavacOrEcj(Path sourceFile, Path directory, Path outputFile) throws IOException, InterruptedException {
+        try {
+            Process process = new ProcessBuilder(javacCommand, "--release", "21", "-proc:none", "-Xlint:none", "-d", directory.toString(), sourceFile.toString())
+                    .redirectErrorStream(true)
+                    .redirectOutput(outputFile.toFile())
+                    .start();
+            boolean finished = process.waitFor(8, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                process.waitFor(1, TimeUnit.SECONDS);
+                return new CompileResult(false, "Java 编译超过 8 秒限制");
+            }
+            String output = Files.readString(outputFile, StandardCharsets.UTF_8).strip();
+            return new CompileResult(process.exitValue() == 0, limitOutput(output, directory));
+        } catch (IOException exception) {
+            if (!isJavacMissing(exception)) throw exception;
+            return compileWithEmbeddedEcj(sourceFile, directory);
+        }
+    }
+
+    private CompileResult compileWithEmbeddedEcj(Path sourceFile, Path directory) {
+        StringWriter diagnostics = new StringWriter();
+        String command = "--release 21 -proc:none -Xlint:none -d " + quote(directory) + " " + quote(sourceFile);
+        AtomicBoolean cancelled = new AtomicBoolean();
+        CompilationProgress progress = new CompilationProgress() {
+            @Override public void begin(int remainingWork) { }
+            @Override public void done() { }
+            @Override public boolean isCanceled() { return cancelled.get(); }
+            @Override public void setTaskName(String name) { }
+            @Override public void worked(int workIncrement, int remainingWork) { }
+        };
+        ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "leetrecall-ecj-compiler");
+            thread.setDaemon(true);
+            return thread;
+        });
+        try {
+            Future<Boolean> future = executor.submit(() -> BatchCompiler.compile(command, new PrintWriter(diagnostics), new PrintWriter(diagnostics), progress));
+            boolean passed = future.get(8, TimeUnit.SECONDS);
+            return new CompileResult(passed, limitOutput(diagnostics.toString().strip(), directory));
+        } catch (TimeoutException exception) {
+            cancelled.set(true);
+            return new CompileResult(false, "Java 编译超过 8 秒限制");
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return new CompileResult(false, "Java 编译被中断");
+        } catch (ExecutionException exception) {
+            return new CompileResult(false, "Java 编译失败：" + exception.getCause().getMessage());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private boolean isJavacMissing(IOException exception) {
+        return exception.getMessage() != null && exception.getMessage().contains("Cannot run program \"" + javacCommand + "\"");
+    }
+
+    private String quote(Path path) {
+        return '"' + path.toAbsolutePath().toString().replace("\\", "\\\\") + '"';
     }
 
     private String prepare(String code) {

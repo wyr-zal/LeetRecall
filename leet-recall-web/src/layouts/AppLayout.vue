@@ -18,7 +18,12 @@ function toggleSidebar(): void {
     <div class="app-stage">
       <AppTopbar />
       <div class="app-content">
-        <RouterView />
+        <RouterView v-slot="{ Component, route }">
+          <KeepAlive>
+            <component :is="Component" v-if="route.meta.keepAlive" />
+          </KeepAlive>
+          <component :is="Component" v-if="!route.meta.keepAlive" />
+        </RouterView>
       </div>
     </div>
   </div>

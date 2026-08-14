@@ -14,7 +14,6 @@ import com.leetrecall.importdata.service.ProblemImportService;
 import com.leetrecall.importdata.vo.ProblemCreatedVO;
 import com.leetrecall.problem.entity.Problem;
 import com.leetrecall.problem.mapper.ProblemMapper;
-import com.leetrecall.problem.mapper.RecallQuestionMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,7 +30,6 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -44,7 +42,6 @@ class ExternalImportDraftServiceTest {
     @Mock private ExternalImportValidator validator;
     @Mock private ProblemImportService problemImportService;
     @Mock private ProblemMapper problemMapper;
-    @Mock private RecallQuestionMapper recallQuestionMapper;
 
     private ExternalImportDraftService service;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -57,7 +54,7 @@ class ExternalImportDraftServiceTest {
     @BeforeEach
     void setUp() {
         service = new ExternalImportDraftService(draftMapper, hot100ManifestService, validator, problemImportService,
-                problemMapper, recallQuestionMapper, objectMapper,
+                problemMapper, objectMapper,
                 Clock.fixed(Instant.parse("2026-08-12T04:00:00Z"), ZoneId.of("Asia/Shanghai")));
     }
 
@@ -72,7 +69,7 @@ class ExternalImportDraftServiceTest {
                 .hasMessage("JSON 尚未通过全部硬校验");
 
         verify(problemImportService, never()).upsertExternal(any(), any());
-        verify(validator, never()).validateRaw(any(), any(), any(), anySet());
+        verify(validator, never()).validateRaw(any(), any(), any());
     }
 
     @Test
@@ -131,8 +128,7 @@ class ExternalImportDraftServiceTest {
     private void readyValidation() throws Exception {
         ExternalImportPayload payload = payload();
         requiredHot100Lookups();
-        when(recallQuestionMapper.selectList(any())).thenReturn(List.of());
-        when(validator.validateRaw(any(), eq(expected), eq(official), anySet()))
+        when(validator.validateRaw(any(), eq(expected), eq(official)))
                 .thenReturn(new ExternalImportValidator.ValidationResult(payload, List.of(), true, ""));
     }
 

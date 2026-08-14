@@ -68,6 +68,36 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
     }
   }
 
+  async function refreshQueue(): Promise<void> {
+    if (loading.value) return
+    try {
+      const queue = await reviewApi.getTodayQueue()
+      todayQueue.value = queue.items
+      const previousProblemId = currentProblemId.value
+      const activeProblemId = readActiveProblemId()
+      if (activeProblemId !== null && queue.items.some((item) => item.problemId === activeProblemId)) {
+        currentProblemId.value = activeProblemId
+      }
+      const currentExists = queue.items.some((item) => item.problemId === currentProblemId.value)
+      if (!currentExists) {
+        currentProblemId.value = queue.items.find((item) => !item.completed)?.problemId
+          ?? queue.items[0]?.problemId
+          ?? null
+      }
+      persistCurrent()
+      if (currentProblemId.value === null) {
+        currentProblem.value = null
+        return
+      }
+      if (currentProblemId.value !== null
+        && (currentProblemId.value !== previousProblemId || currentProblem.value === null)) {
+        await loadProblem(currentProblemId.value)
+      }
+    } catch (cause) {
+      if (!currentProblem.value) error.value = cause instanceof Error ? cause.message : '加载失败，请重试'
+    }
+  }
+
   async function loadProblem(problemId: number): Promise<void> {
     detailLoading.value = true
     error.value = ''
@@ -182,6 +212,7 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
     currentIndex,
     currentDraft,
     loadQueue,
+    refreshQueue,
     loadProblem,
     openProblem,
     updateDraft,

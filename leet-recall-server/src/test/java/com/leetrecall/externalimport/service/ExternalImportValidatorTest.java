@@ -43,7 +43,7 @@ class ExternalImportValidatorTest {
     }
 
     @Test
-    void rejectsForbiddenSourceFieldsAndGenericQuestions() {
+    void ignoresExtraFieldsAndAllowsContentStyleVariations() {
         Map<String, Object> payload = validPayload();
         payload.put("sourceRefs", List.of("S1"));
         payload.put("recallQuestions", List.of(
@@ -54,9 +54,8 @@ class ExternalImportValidatorTest {
 
         var result = validator.validateRaw(write(payload), expected, official);
 
-        assertThat(result.ready()).isFalse();
-        assertThat(result.errors()).anyMatch(error -> error.contains("来源") || error.contains("不允许"));
-        assertThat(result.errors()).anyMatch(error -> error.contains("通用套话"));
+        assertThat(result.ready()).describedAs(result.errors().toString()).isTrue();
+        assertThat(result.errors()).isEmpty();
     }
 
     @Test
@@ -113,12 +112,169 @@ class ExternalImportValidatorTest {
     }
 
     @Test
-    void rejectsAQuestionAlreadyUsedByAnotherProblem() {
-        var result = validator.validateRaw(write(validPayload()), expected, official,
-                java.util.Set.of(validator.questionKey("遍历到当前元素时，映射表保存的对象是什么？")));
+    void compilesWithEmbeddedCompilerWhenJavacIsUnavailable() {
+        JavaCompileService.CompileResult result = new JavaCompileService("javac-not-installed")
+                .compile("class Solution { public int answer() { return 42; } }");
+
+        assertThat(result.passed()).describedAs(result.output()).isTrue();
+    }
+
+    @Test
+    void acceptsRewordedDescriptionWhenMarkdownStructureMatches() {
+        Hot100OfficialSource.OfficialProblem structuredOfficial = officialWithDescription("""
+                # 题目说明
+
+                给定一个数组，请求出答案。[原题](https://leetcode.cn/problems/two-sum/)
+
+                - 第一个条件
+                - 第二个条件 [参考](https://example.com/rule)
+
+                ```text
+                示例输入
+                ```
+
+                ---
+                """);
+        Map<String, Object> payload = validPayload();
+        payload.put("descriptionMarkdown", """
+                # 另一种表述
+
+                给你一组数，找出符合要求的结果。[题目链接](https://anywhere.invalid/problem)
+
+                - 改写后的条件
+                - 仍保留一个链接 [说明](https://anywhere.invalid/rule)
+
+                ```text
+                任意示例文本
+                ```
+
+                ---
+                """);
+
+        var result = validator.validateRaw(write(payload), expected, structuredOfficial);
+
+        assertThat(result.errors()).noneMatch(error -> error.contains("Markdown 排版结构"));
+    }
+
+    @Test
+    void acceptsDescriptionWhenNonEssentialMarkdownStructureChanges() {
+        Hot100OfficialSource.OfficialProblem structuredOfficial = officialWithDescription("""
+                这是说明，[原题](https://leetcode.cn/problems/two-sum/)。
+
+                ---
+
+                - 第一项
+                - 第二项
+                """);
+        Map<String, Object> payload = validPayload();
+        payload.put("descriptionMarkdown", """
+                这是改写后的说明，不保留链接，文字可自由改写。
+
+                - 只保留了一项
+                """);
+
+        var result = validator.validateRaw(write(payload), expected, structuredOfficial);
+
+        assertThat(result.ready()).describedAs(result.errors().toString()).isTrue();
+        assertThat(result.errors()).noneMatch(error -> error.contains("descriptionMarkdown"));
+    }
+
+    @Test
+    void rejectsUnclosedDescriptionFenceWithExactLineNumber() {
+        Map<String, Object> payload = validPayload();
+        payload.put("descriptionMarkdown", """
+                题目说明
+
+                ```text
+                输入：nums = [2, 7]
+                输出：[0, 1]
+                """);
+
+        var result = validator.validateRaw(write(payload), expected, official);
 
         assertThat(result.ready()).isFalse();
-        assertThat(result.errors()).anyMatch(error -> error.contains("其他题目重复"));
+        assertThat(result.errors()).contains("descriptionMarkdown 第 3 行：代码围栏 ``` 未闭合，请在代码块末尾补上同类型围栏");
+    }
+
+    @Test
+    void reportsExpectedAndActualValuesForLockedFields() {
+        Map<String, Object> payload = validPayload();
+        payload.put("leetcodeNumber", 2);
+        payload.put("title", "错误标题");
+        payload.put("difficulty", "HARD");
+
+        var result = validator.validateRaw(write(payload), expected, official);
+
+        assertThat(result.errors()).contains(
+                "leetcodeNumber：必须为 1，实际为 “2”",
+                "title：必须为“两数之和”，实际为 “错误标题”",
+                "difficulty：必须为 EASY，实际为 “HARD”"
+        );
+    }
+
+    @Test
+    void allowsLongDictationAnswerWhenItRestoresTheCode() {
+        Map<String, Object> payload = validPayload();
+        String blankOne = "    public int[] twoSum(int[] nums, int target) {";
+        String longAnswer = "        /*" + "x".repeat(1_200) + "*/";
+        String blankThree = "        return new int[0];\n    }";
+        String template = "class Solution {\n{{blank_1}}\n{{blank_2}}\n{{blank_3}}\n}";
+        payload.put("fullCode", "class Solution {\n" + blankOne + "\n" + longAnswer + "\n" + blankThree + "\n}");
+        payload.put("keyCode", "return new int[0];");
+        payload.put("dictation", Map.of(
+                "language", "JAVA",
+                "templateCode", template,
+                "answers", Map.of("blank_1", blankOne, "blank_2", longAnswer, "blank_3", blankThree),
+                "keywords", List.of("补数")
+        ));
+
+        var result = validator.validateRaw(write(payload), expected, official);
+
+        assertThat(longAnswer.length()).isGreaterThan(1_000);
+        assertThat(result.ready()).describedAs(result.errors().toString()).isTrue();
+    }
+
+    @Test
+    void acceptsOneQuestionAndOneDictationBlank() {
+        Map<String, Object> payload = validPayload();
+        payload.put("recallQuestions", List.of(
+                Map.of("question", "核心状态是什么？", "answer", "保存已遍历数字与下标。")
+        ));
+        payload.put("dictation", Map.of(
+                "language", "JAVA",
+                "templateCode", "class Solution {\n{{blank_1}}\n}",
+                "answers", Map.of("blank_1", "    public int[] twoSum(int[] nums, int target) {\n        int[] result = new int[0];\n        return result;\n    }"),
+                "keywords", List.of()
+        ));
+
+        var result = validator.validateRaw(write(payload), expected, official);
+
+        assertThat(result.ready()).describedAs(result.errors().toString()).isTrue();
+    }
+
+    @Test
+    void reportsMalformedJsonLocation() {
+        var result = validator.validateRaw("{\n  \"leetcodeNumber\": 1,\n  \"title\": \"两数之和\",\n}", expected, official);
+
+        assertThat(result.ready()).isFalse();
+        assertThat(result.errors()).singleElement().asString().contains("JSON 第 4 行");
+    }
+
+    @Test
+    void reportsWrongFieldTypeWithFieldPath() {
+        Map<String, Object> payload = validPayload();
+        payload.put("recallQuestions", "不是数组");
+
+        var result = validator.validateRaw(write(payload), expected, official);
+
+        assertThat(result.ready()).isFalse();
+        assertThat(result.errors()).singleElement().asString().contains("JSON 字段 recallQuestions 类型不正确");
+    }
+
+    private Hot100OfficialSource.OfficialProblem officialWithDescription(String description) {
+        return new Hot100OfficialSource.OfficialProblem("哈希", 1, "两数之和", Difficulty.EASY,
+                "https://leetcode.cn/problems/two-sum/", 1, description, List.of("数组"),
+                "class Solution { public int[] twoSum(int[] nums, int target) { } }");
     }
 
     private Map<String, Object> validPayload() {

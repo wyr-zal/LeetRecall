@@ -40,6 +40,7 @@ export const useDictationStore = defineStore('dictation', () => {
   const submitting = ref(false)
   const error = ref('')
   const sessionId = createSessionId()
+  let detailRequestSequence = 0
 
   const currentIndex = computed(() => todayQueue.value.findIndex(
     (item) => item.problemId === currentProblemId.value,
@@ -74,11 +75,46 @@ export const useDictationStore = defineStore('dictation', () => {
     }
   }
 
+  async function refreshQueue(): Promise<void> {
+    if (loading.value) return
+    try {
+      const queue = await dictationApi.getTodayQueue()
+      todayQueue.value = queue.items
+      const previousProblemId = currentProblemId.value
+      const activeProblemId = readActiveProblemId()
+      if (activeProblemId !== null && queue.items.some((item) => item.problemId === activeProblemId)) {
+        currentProblemId.value = activeProblemId
+      }
+      if (!queue.items.some((item) => item.problemId === currentProblemId.value)) {
+        currentProblemId.value = queue.items.find((item) => !item.completed)?.problemId
+          ?? queue.items[0]?.problemId
+          ?? null
+      }
+      if (currentProblemId.value === null) {
+        currentProblem.value = null
+        history.value = []
+        return
+      }
+      if (currentProblemId.value !== null
+        && (currentProblemId.value !== previousProblemId || currentProblem.value === null)) {
+        await loadProblem(currentProblemId.value)
+      }
+    } catch (cause) {
+      if (!currentProblem.value) error.value = cause instanceof Error ? cause.message : '加载失败，请重试'
+    }
+  }
+
   async function loadProblem(problemId: number): Promise<void> {
+    const requestSequence = ++detailRequestSequence
     detailLoading.value = true
     error.value = ''
     try {
-      currentProblem.value = await dictationApi.getProblemDetail(problemId)
+      const [detail, page] = await Promise.all([
+        dictationApi.getProblemDetail(problemId),
+        dictationApi.getRecords(problemId, 1, 2),
+      ])
+      if (requestSequence !== detailRequestSequence) return
+      currentProblem.value = detail
       currentProblemId.value = problemId
       viewedAnswer.value = false
       revealedAnswer.value = null
@@ -86,11 +122,13 @@ export const useDictationStore = defineStore('dictation', () => {
       startTime.value = Date.now()
       writeStorage(CURRENT_KEY, problemId)
       writeActiveProblemId(problemId)
-      await loadHistory()
+      history.value = page.items
     } catch (cause) {
-      error.value = cause instanceof Error ? cause.message : '加载失败，请重试'
+      if (requestSequence === detailRequestSequence) {
+        error.value = cause instanceof Error ? cause.message : '加载失败，请重试'
+      }
     } finally {
-      detailLoading.value = false
+      if (requestSequence === detailRequestSequence) detailLoading.value = false
     }
   }
 
@@ -164,6 +202,7 @@ export const useDictationStore = defineStore('dictation', () => {
     currentAnswers,
     currentAccuracy,
     loadQueue,
+    refreshQueue,
     loadProblem,
     updateAnswers,
     reset,

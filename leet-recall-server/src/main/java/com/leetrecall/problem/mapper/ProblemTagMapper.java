@@ -2,6 +2,7 @@ package com.leetrecall.problem.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.leetrecall.problem.entity.ProblemTag;
+import com.leetrecall.problem.vo.ProblemTagNameVO;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
@@ -18,5 +19,18 @@ public interface ProblemTagMapper extends BaseMapper<ProblemTag> {
             LIMIT #{limit}
             """)
     List<String> selectTagNames(@Param("problemId") Long problemId, @Param("limit") int limit);
-}
 
+    @Select("""
+            <script>
+            SELECT pt.problem_id, t.name
+            FROM problem_tag pt
+            JOIN tag t ON t.id = pt.tag_id
+            WHERE pt.problem_id IN
+            <foreach collection='problemIds' item='problemId' open='(' separator=',' close=')'>
+                #{problemId}
+            </foreach>
+            ORDER BY pt.problem_id, pt.id
+            </script>
+            """)
+    List<ProblemTagNameVO> selectTagNamesByProblemIds(@Param("problemIds") List<Long> problemIds);
+}

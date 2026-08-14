@@ -17,9 +17,7 @@ import com.leetrecall.hot100.service.Hot100ManifestService;
 import com.leetrecall.importdata.service.ProblemImportService;
 import com.leetrecall.importdata.vo.ProblemCreatedVO;
 import com.leetrecall.problem.entity.Problem;
-import com.leetrecall.problem.entity.RecallQuestion;
 import com.leetrecall.problem.mapper.ProblemMapper;
-import com.leetrecall.problem.mapper.RecallQuestionMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,15 +36,13 @@ public class ExternalImportDraftService {
     private final ExternalImportValidator validator;
     private final ProblemImportService problemImportService;
     private final ProblemMapper problemMapper;
-    private final RecallQuestionMapper recallQuestionMapper;
     private final ObjectMapper objectMapper;
     private final Clock applicationClock;
 
     public ExternalImportDraftResponse create(ExternalImportDraftRequest request) {
         Hot100Manifest.Hot100Problem expected = hot100ManifestService.requireByNumber(request.hot100Number());
         Hot100OfficialSource.OfficialProblem official = hot100ManifestService.requireOfficialByNumber(request.hot100Number());
-        ExternalImportValidator.ValidationResult result = validator.validateRaw(request.content(), expected, official,
-                otherQuestionKeys(request.hot100Number()));
+        ExternalImportValidator.ValidationResult result = validator.validateRaw(request.content(), expected, official);
         ExternalImportDraft draft = new ExternalImportDraft();
         LocalDateTime now = LocalDateTime.now(applicationClock);
         draft.setLeetcodeNumber(request.hot100Number());
@@ -72,8 +68,7 @@ public class ExternalImportDraftService {
         Hot100Manifest.Hot100Problem expected = hot100ManifestService.requireByNumber(request.hot100Number());
         if (!request.hot100Number().equals(draft.getLeetcodeNumber())) throw ErrorCode.INVALID_REQUEST.exception();
         Hot100OfficialSource.OfficialProblem official = hot100ManifestService.requireOfficialByNumber(request.hot100Number());
-        ExternalImportValidator.ValidationResult result = validator.validateRaw(request.content(), expected, official,
-                otherQuestionKeys(request.hot100Number()));
+        ExternalImportValidator.ValidationResult result = validator.validateRaw(request.content(), expected, official);
         draft.setContentJson(validator.sanitizeForStorage(request.content()));
         draft.setDraftPayloadJson(result.payload() == null ? null : writeJson(result.payload()));
         draft.setValidationErrorsJson(writeJson(result.errors()));
@@ -88,13 +83,11 @@ public class ExternalImportDraftService {
     public ExternalImportDraftResponse confirm(Long draftId, boolean confirmOverwrite) {
         ExternalImportDraft draft = requireDraft(draftId);
         if ("IMPORTED".equals(draft.getStatus())) return response(draft);
-        // draftPayloadJson 是经过字段白名单反序列化后的内容；必须先确认上一轮校验已通过，
-        // 否则含来源/模型字段的无效原始 JSON 可能在重新校验时被静默剥离后绕过门禁。
+        // 只允许确认上一轮已经通过的草稿；确认时仍会对净化后的白名单内容重新校验。
         if (!"READY".equals(draft.getStatus())) throw ErrorCode.EXTERNAL_IMPORT_NOT_READY.exception();
         Hot100Manifest.Hot100Problem expected = hot100ManifestService.requireByNumber(draft.getLeetcodeNumber());
         Hot100OfficialSource.OfficialProblem official = hot100ManifestService.requireOfficialByNumber(draft.getLeetcodeNumber());
-        ExternalImportValidator.ValidationResult result = validator.validateRaw(draft.getDraftPayloadJson(), expected, official,
-                otherQuestionKeys(draft.getLeetcodeNumber()));
+        ExternalImportValidator.ValidationResult result = validator.validateRaw(draft.getDraftPayloadJson(), expected, official);
         if (!result.ready()) {
             draft.setStatus("INVALID"); draft.setValidationErrorsJson(writeJson(result.errors()));
             draft.setCompilePassed(result.compilePassed()); draft.setCompileOutput(result.compileOutput()); draft.setUpdatedAt(LocalDateTime.now(applicationClock)); draftMapper.updateById(draft);
@@ -117,16 +110,6 @@ public class ExternalImportDraftService {
 
     private Problem existingProblem(Integer number) {
         return problemMapper.selectOne(new LambdaQueryWrapper<Problem>().eq(Problem::getLeetcodeNumber, number));
-    }
-
-    private java.util.Set<String> otherQuestionKeys(Integer number) {
-        Problem current = existingProblem(number);
-        LambdaQueryWrapper<RecallQuestion> query = new LambdaQueryWrapper<>();
-        if (current != null) query.ne(RecallQuestion::getProblemId, current.getId());
-        return recallQuestionMapper.selectList(query).stream()
-                .map(RecallQuestion::getQuestionText)
-                .map(validator::questionKey)
-                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     private ExternalImportDraftResponse response(ExternalImportDraft draft) {

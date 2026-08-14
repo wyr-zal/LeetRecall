@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { defineAsyncComponent, onActivated, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { dictationApi } from '@/api/dictation'
 import { useDictationStore } from '@/stores/dictation'
 import DictationProgress from '@/components/dictation/DictationProgress.vue'
 import DictationProblemHeader from '@/components/dictation/DictationProblemHeader.vue'
-import CodeBlankEditor from '@/components/dictation/CodeBlankEditor.vue'
 import DictationActions from '@/components/dictation/DictationActions.vue'
 import CompletionRing from '@/components/dictation/CompletionRing.vue'
 import KeywordPanel from '@/components/dictation/KeywordPanel.vue'
@@ -17,6 +16,12 @@ import LoadingState from '@/components/common/LoadingState.vue'
 import ErrorState from '@/components/common/ErrorState.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import type { DictationRecordDetail } from '@/types/dictation'
+
+const CodeBlankEditor = defineAsyncComponent({
+  loader: () => import('@/components/dictation/CodeBlankEditor.vue'),
+  loadingComponent: LoadingState,
+  delay: 80,
+})
 
 const store = useDictationStore()
 const {
@@ -36,8 +41,16 @@ const {
 } = storeToRefs(store)
 const resetOpen = ref(false)
 const recordDetail = ref<DictationRecordDetail | null>(null)
+let firstActivation = true
 
 onMounted(() => store.loadQueue())
+onActivated(() => {
+  if (firstActivation) {
+    firstActivation = false
+    return
+  }
+  void store.refreshQueue()
+})
 
 function confirmReset(): void {
   store.reset()

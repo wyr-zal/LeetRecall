@@ -11,10 +11,12 @@ const router = createRouter({
       children: [
         {
           path: 'quick-review',
+          meta: { keepAlive: true },
           component: () => import('@/views/quick-review/QuickReviewView.vue'),
         },
         {
           path: 'dictation',
+          meta: { keepAlive: true },
           component: () => import('@/views/dictation/DictationView.vue'),
         },
         {

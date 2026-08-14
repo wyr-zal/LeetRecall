@@ -5,9 +5,17 @@ RUN mvn -q -DskipTests dependency:go-offline
 COPY src ./src
 RUN mvn -q -DskipTests package
 
-FROM eclipse-temurin:21-jdk-alpine
+FROM eclipse-temurin:21-jdk-jammy
 WORKDIR /app
-RUN addgroup -S leetrecall && adduser -S leetrecall -G leetrecall
+RUN set -eux; \
+    java -version; \
+    javac --version | grep -Eq '^javac 21([.]|$)'
+RUN set -eux; \
+    groupadd --system leetrecall; \
+    useradd --system --gid leetrecall --create-home leetrecall; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends wget; \
+    rm -rf /var/lib/apt/lists/*
 COPY --from=build /workspace/target/leet-recall-server-1.0.0.jar app.jar
 USER leetrecall
 EXPOSE 8080

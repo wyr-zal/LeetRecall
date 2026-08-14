@@ -12,6 +12,7 @@ import com.leetrecall.problem.mapper.ProblemMapper;
 import com.leetrecall.problem.mapper.ProblemMistakeMapper;
 import com.leetrecall.problem.mapper.ProblemTagMapper;
 import com.leetrecall.problem.mapper.RecallQuestionMapper;
+import com.leetrecall.problem.vo.ProblemTagNameVO;
 import com.leetrecall.review.dto.ReviewSubmitDTO;
 import com.leetrecall.review.entity.ProblemProgress;
 import com.leetrecall.review.entity.ReviewRecord;
@@ -30,6 +31,8 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -49,13 +52,21 @@ public class ReviewService {
         LocalDate today = LocalDate.now(applicationClock);
         LocalDateTime dayStart = today.atStartOfDay();
         LocalDateTime dayEnd = today.plusDays(1).atStartOfDay();
-        List<ReviewQueueItemVO> items = problemMapper.selectTodayReviewRows(dayStart, dayEnd).stream()
+        var rows = problemMapper.selectTodayReviewRows(dayStart, dayEnd);
+        Map<Long, List<String>> tagsByProblem = rows.isEmpty()
+                ? Map.of()
+                : problemTagMapper.selectTagNamesByProblemIds(rows.stream().map(row -> row.getProblemId()).toList()).stream()
+                .collect(Collectors.groupingBy(
+                        ProblemTagNameVO::getProblemId,
+                        Collectors.mapping(ProblemTagNameVO::getName, Collectors.toList())
+                ));
+        List<ReviewQueueItemVO> items = rows.stream()
                 .map(row -> new ReviewQueueItemVO(
                         row.getProblemId(),
                         row.getLeetcodeNumber(),
                         row.getTitle(),
                         row.getDifficulty(),
-                        problemTagMapper.selectTagNames(row.getProblemId(), 4),
+                        tagsByProblem.getOrDefault(row.getProblemId(), List.of()).stream().limit(4).toList(),
                         row.getMasteryLevel(),
                         Boolean.TRUE.equals(row.getCompleted()),
                         row.getTodayResult()
