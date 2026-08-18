@@ -17,7 +17,7 @@ const shortcuts = [
 </template>
 
 <style scoped>
-.shortcuts { padding: 18px; background: #222222; }
+.shortcuts { padding: 18px; background: var(--bg-card); }
 h2 { margin: 0 0 14px; font-size: 15px; font-weight: 650; }
 dl { display: grid; grid-template-columns: 1fr 1fr; gap: 9px 12px; margin: 0; }
 dl > div { display: flex; align-items: center; gap: 8px; }

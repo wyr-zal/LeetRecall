@@ -49,7 +49,7 @@ h1 span { color: var(--primary); font-weight: 620; }
   border: 1px solid currentColor;
   border-radius: 5px;
 }
-.difficulty-easy { color: #73d9cd; background: rgba(60, 211, 192, 0.07); }
-.difficulty-medium { color: #f3c969; background: rgba(243, 201, 105, 0.07); }
-.difficulty-hard { color: #ff9aac; background: rgba(255, 91, 121, 0.07); }
+.difficulty-easy { color: var(--success-strong); background: rgba(60, 211, 192, 0.07); }
+.difficulty-medium { color: var(--warning-strong); background: rgba(243, 201, 105, 0.07); }
+.difficulty-hard { color: var(--danger-strong); background: var(--danger-soft); }
 </style>

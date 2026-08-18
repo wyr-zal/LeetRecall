@@ -31,6 +31,7 @@ export const useDictationStore = defineStore('dictation', () => {
   const currentProblem = ref<DictationProblemDetail | null>(null)
   const drafts = ref<DictationDrafts>(readStorage<DictationDrafts>(DRAFTS_KEY, {}))
   const viewedAnswer = ref(false)
+  const answerVisible = ref(false)
   const revealedAnswer = ref<DictationAnswer | null>(null)
   const submitResult = ref<DictationSubmitResult | null>(null)
   const history = ref<DictationRecord[]>([])
@@ -117,6 +118,7 @@ export const useDictationStore = defineStore('dictation', () => {
       currentProblem.value = detail
       currentProblemId.value = problemId
       viewedAnswer.value = false
+      answerVisible.value = false
       revealedAnswer.value = null
       submitResult.value = null
       startTime.value = Date.now()
@@ -141,13 +143,22 @@ export const useDictationStore = defineStore('dictation', () => {
   function reset(): void {
     updateAnswers({})
     submitResult.value = null
+    answerVisible.value = false
     revealedAnswer.value = null
   }
 
-  async function showAnswer(): Promise<void> {
+  /** 首次显示会向后端留痕（本次最高 60 分），之后可在答案与默写之间自由切换，草稿不丢。 */
+  async function toggleAnswer(): Promise<void> {
     if (currentProblemId.value === null) return
-    revealedAnswer.value = await dictationApi.viewAnswer(currentProblemId.value, sessionId)
-    viewedAnswer.value = true
+    if (answerVisible.value) {
+      answerVisible.value = false
+      return
+    }
+    if (!revealedAnswer.value) {
+      revealedAnswer.value = await dictationApi.viewAnswer(currentProblemId.value, sessionId)
+      viewedAnswer.value = true
+    }
+    answerVisible.value = true
   }
 
   async function submit(): Promise<void> {
@@ -191,6 +202,7 @@ export const useDictationStore = defineStore('dictation', () => {
     currentProblemId,
     currentProblem,
     viewedAnswer,
+    answerVisible,
     revealedAnswer,
     submitResult,
     history,
@@ -206,7 +218,7 @@ export const useDictationStore = defineStore('dictation', () => {
     loadProblem,
     updateAnswers,
     reset,
-    showAnswer,
+    toggleAnswer,
     submit,
     loadHistory,
     move,

@@ -60,7 +60,7 @@ h2 { margin: 0; font-size: 16px; font-weight: 620; }
   transition: background-color 150ms ease, box-shadow 150ms ease;
 }
 .question-card:last-child { border-bottom: 0; }
-.question-card:focus-within { background: #242424; box-shadow: inset 3px 0 0 var(--primary); }
+.question-card:focus-within { background: var(--bg-card-hover); box-shadow: inset 3px 0 0 var(--primary); }
 .question-card > span { color: var(--text-secondary); font-size: 14px; font-weight: 560; line-height: 1.45; }
 textarea {
   width: 100%;
@@ -73,7 +73,7 @@ textarea {
   outline: 0;
   background: transparent;
 }
-textarea::placeholder { color: #737373; }
+textarea::placeholder { color: var(--placeholder); }
 .correct-answer {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);

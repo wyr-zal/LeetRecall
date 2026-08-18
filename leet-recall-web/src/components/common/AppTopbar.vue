@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { Flame, Search, UserRound } from 'lucide-vue-next'
+import { Flame, Moon, Search, Sun, UserRound } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { reviewApi } from '@/api/review'
 import { useQuickReviewStore } from '@/stores/quickReview'
+import { useTheme } from '@/composables/useTheme'
 import type { ProblemSearchItem } from '@/types/problem'
 
 const router = useRouter()
 const route = useRoute()
 const reviewStore = useQuickReviewStore()
+const { themeMode, toggleTheme } = useTheme()
 const keyword = ref('')
 const results = ref<ProblemSearchItem[]>([])
 const searchOpen = ref(false)
@@ -100,6 +102,18 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
         <Flame :size="19" :stroke-width="2" />
         <span>连续 <strong>{{ streak }}</strong> 天</span>
       </div>
+      <button
+        class="theme-toggle"
+        type="button"
+        :aria-label="themeMode === 'dark' ? '切换浅色模式' : '切换深色模式'"
+        :title="themeMode === 'dark' ? '切换浅色模式' : '切换深色模式'"
+        :aria-pressed="themeMode === 'light'"
+        @click="toggleTheme"
+      >
+        <Sun v-if="themeMode === 'dark'" :size="17" aria-hidden="true" />
+        <Moon v-else :size="17" aria-hidden="true" />
+        <span>{{ themeMode === 'dark' ? '浅色' : '深色' }}</span>
+      </button>
       <div class="avatar" aria-label="个人用户"><UserRound :size="20" /></div>
     </div>
   </header>
@@ -159,7 +173,7 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
   border-radius: 8px;
   outline: none;
   background: var(--bg-primary);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+  box-shadow: inset 0 1px 2px var(--border-highlight);
 }
 
 .search-wrap input:focus {
@@ -235,6 +249,24 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
   gap: 18px;
 }
 
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 10px;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-secondary);
+  border-radius: 7px;
+  background: var(--bg-input);
+}
+
+.theme-toggle:hover {
+  color: var(--text-primary);
+  border-color: var(--border-primary);
+  background: var(--bg-card-hover);
+}
+
 .streak {
   gap: 8px;
   color: var(--text-secondary);
@@ -286,6 +318,10 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
 
   .topbar-actions {
     gap: 8px;
+  }
+
+  .theme-toggle span {
+    display: none;
   }
 
   .streak { padding: 7px; }

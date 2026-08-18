@@ -22,7 +22,7 @@
   display: block;
   height: 16px;
   border-radius: 6px;
-  background: linear-gradient(90deg, #252525 25%, #363636 50%, #252525 75%);
+  background: linear-gradient(90deg, var(--code-surface-raised) 25%, var(--bg-card-hover) 50%, var(--code-surface-raised) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.35s linear infinite;
 }

@@ -7,16 +7,38 @@ const manifest: Hot100Manifest = {
   sourceStudyPlanUrl: 'https://leetcode.cn/studyplan/top-100-liked/',
   sourceVersion: 'test',
   generatedAt: '2026-08-13T00:00:00Z',
-  problems: [{
-    order: 1,
-    group: '哈希',
-    leetcodeNumber: 1,
-    slug: 'two-sum',
-    title: '两数之和',
-    englishTitle: 'Two Sum',
-    difficulty: 'EASY',
-    problemUrl: 'https://leetcode.cn/problems/two-sum/',
-  }],
+  problems: [
+    {
+      order: 1,
+      group: '哈希',
+      leetcodeNumber: 1,
+      slug: 'two-sum',
+      title: '两数之和',
+      englishTitle: 'Two Sum',
+      difficulty: 'EASY',
+      problemUrl: 'https://leetcode.cn/problems/two-sum/',
+    },
+    {
+      order: 4,
+      group: '双指针',
+      leetcodeNumber: 283,
+      slug: 'move-zeroes',
+      title: '移动零',
+      englishTitle: 'Move Zeroes',
+      difficulty: 'EASY',
+      problemUrl: 'https://leetcode.cn/problems/move-zeroes/',
+    },
+    {
+      order: 7,
+      group: '双指针',
+      leetcodeNumber: 42,
+      slug: 'trapping-rain-water',
+      title: '接雨水',
+      englishTitle: 'Trapping Rain Water',
+      difficulty: 'HARD',
+      problemUrl: 'https://leetcode.cn/problems/trapping-rain-water/',
+    },
+  ],
 }
 
 const task: ExternalImportTaskPack = {
@@ -62,11 +84,66 @@ async function chooseFile(wrapper: ReturnType<typeof mount>, file: File): Promis
 
 describe('ProblemImportView', () => {
   beforeEach(() => {
+    localStorage.clear()
     vi.spyOn(problemImportApi, 'getHot100Manifest').mockResolvedValue(manifest)
     vi.spyOn(problemImportApi, 'getExternalImportTask').mockResolvedValue(task)
   })
 
   afterEach(() => vi.restoreAllMocks())
+
+  it('does not expand the full Hot100 list when the search is empty', async () => {
+    const wrapper = mount(ProblemImportView, {
+      global: { stubs: { MarkdownContent: true, ConfirmDialog: true } },
+    })
+    await flushPromises()
+
+    await wrapper.get('#hot100-search').trigger('focus')
+
+    expect(wrapper.findAll('.search-result')).toHaveLength(0)
+    expect(wrapper.text()).toContain('输入题号或名称开始搜索')
+    expect(wrapper.get('[data-test="browse-problems"]').text()).toContain('浏览全部')
+  })
+
+  it('filters the browse panel by group and difficulty and selects a problem', async () => {
+    const wrapper = mount(ProblemImportView, {
+      attachTo: document.body,
+      global: { stubs: { MarkdownContent: true, ConfirmDialog: true } },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-test="browse-problems"]').trigger('click')
+    await flushPromises()
+    const dialog = document.body.querySelector('.problem-browser') as HTMLElement
+    expect(dialog).not.toBeNull()
+
+    ;(dialog.querySelector('[data-test="group-双指针"]') as HTMLButtonElement).click()
+    ;(dialog.querySelector('[data-test="difficulty-HARD"]') as HTMLButtonElement).click()
+    await wrapper.vm.$nextTick()
+
+    const results = Array.from(dialog.querySelectorAll<HTMLButtonElement>('.browser-result'))
+    expect(results).toHaveLength(1)
+    expect(results[0]?.textContent).toContain('42 · 接雨水')
+    results[0]?.click()
+    await flushPromises()
+
+    expect(problemImportApi.getExternalImportTask).toHaveBeenCalledWith(42)
+    expect(document.body.querySelector('.problem-browser')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('shows recently selected problems when the search is opened again', async () => {
+    const wrapper = mount(ProblemImportView, {
+      global: { stubs: { MarkdownContent: true, ConfirmDialog: true } },
+    })
+    await flushPromises()
+    await selectFirstProblem(wrapper)
+
+    await wrapper.get('.clear-search').trigger('click')
+
+    expect(wrapper.text()).toContain('最近选择')
+    expect(wrapper.get('.search-result').text()).toContain('1 · 两数之和')
+    expect(localStorage.getItem('leetrecall.problem-import.recent')).toBe('[1]')
+  })
 
   it('keeps task preview collapsed by default and provides a local JSON file picker', async () => {
     const wrapper = mount(ProblemImportView, {

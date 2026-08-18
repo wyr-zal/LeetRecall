@@ -10,7 +10,7 @@ defineProps<{ mistakes: string[] }>()
 </template>
 
 <style scoped>
-.panel { padding: 18px; background: #222222; }
+.panel { padding: 18px; background: var(--bg-card); }
 h2 { margin: 0 0 13px; font-size: 15px; font-weight: 650; }
 ul { display: grid; gap: 10px; padding: 0; margin: 0; list-style: none; }
 li { position: relative; padding-left: 15px; color: var(--text-secondary); font-size: 12px; line-height: 1.55; }

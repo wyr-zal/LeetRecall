@@ -10,7 +10,7 @@ defineProps<{ keywords: string[] }>()
 </template>
 
 <style scoped>
-.panel { padding: 18px; background: #222222; }
+.panel { padding: 18px; background: var(--bg-card); }
 h2 { margin: 0 0 14px; font-size: 15px; font-weight: 650; }
 .keywords { display: flex; flex-wrap: wrap; gap: 8px; }
 .keywords span { padding: 6px 9px; color: var(--text-secondary); font-size: 12px; border: 1px solid var(--border-primary); border-radius: 6px; background: var(--bg-input); box-shadow: none; }

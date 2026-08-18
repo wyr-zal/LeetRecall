@@ -271,7 +271,7 @@ useReviewShortcuts({
   background: transparent;
   transition: background-color 180ms ease;
 }
-.study-tabs button:hover { color: var(--text-secondary); background: rgba(255, 255, 255, 0.018); }
+.study-tabs button:hover { color: var(--text-secondary); background: var(--border-highlight); }
 .study-tabs button.active { color: var(--primary-hover); }
 .study-tabs button.active::after { background: var(--primary); }
 .study-tabs button:focus-visible { z-index: 1; outline: 2px solid var(--primary); outline-offset: -2px; }
@@ -287,7 +287,7 @@ useReviewShortcuts({
   margin-top: 0;
   border-top: 1px solid var(--border-secondary);
   background: var(--surface-raised);
-  box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 -10px 24px var(--shadow-low);
 }
 @keyframes reveal-panel {
   from { opacity: 0; transform: translateY(3px); }

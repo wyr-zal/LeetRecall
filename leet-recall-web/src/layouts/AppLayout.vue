@@ -18,11 +18,10 @@ function toggleSidebar(): void {
     <div class="app-stage">
       <AppTopbar />
       <div class="app-content">
-        <RouterView v-slot="{ Component, route }">
-          <KeepAlive>
-            <component :is="Component" v-if="route.meta.keepAlive" />
+        <RouterView v-slot="{ Component }">
+          <KeepAlive :include="['QuickReviewView', 'DictationView']">
+            <component :is="Component" />
           </KeepAlive>
-          <component :is="Component" v-if="!route.meta.keepAlive" />
         </RouterView>
       </div>
     </div>
@@ -45,12 +44,12 @@ function toggleSidebar(): void {
 .app-stage {
   min-width: 0;
   background: var(--bg-primary);
-  box-shadow: -18px 0 42px rgba(0, 0, 0, 0.16);
+  box-shadow: var(--shadow-medium);
 }
 
 .app-content {
   min-height: calc(100dvh - var(--topbar-height));
-  border-left: 1px solid rgba(255, 255, 255, 0.015);
+  border-left: 1px solid var(--border-highlight);
 }
 
 @media (max-width: 1279px) {

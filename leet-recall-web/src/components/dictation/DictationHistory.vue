@@ -33,7 +33,7 @@ function formatDuration(seconds: number): string {
 </template>
 
 <style scoped>
-.history { overflow: hidden; background: #222222; }
+.history { overflow: hidden; background: var(--bg-card); }
 h2 { padding: 18px 20px 12px; margin: 0; font-size: 15px; font-weight: 650; }
 .history-head, button { display: grid; grid-template-columns: 1.4fr 0.8fr 0.9fr 20px; gap: 12px; align-items: center; width: 100%; padding: 10px 20px; text-align: left; }
 .history-head { color: var(--text-muted); font-size: 12px; border-bottom: 1px solid var(--border-secondary); }

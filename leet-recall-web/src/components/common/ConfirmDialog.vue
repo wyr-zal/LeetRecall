@@ -41,7 +41,7 @@ defineEmits<{ confirm: []; cancel: [] }>()
   border: 1px solid var(--border-primary);
   border-radius: 12px;
   background: var(--bg-card);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.46);
+  box-shadow: var(--shadow-high);
 }
 
 h2 { margin: 0 0 9px; font-size: 18px; }
@@ -49,5 +49,5 @@ p { margin: 0; color: var(--text-secondary); line-height: 1.65; }
 .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
 button { min-width: 82px; min-height: 40px; border-radius: 8px; }
 .secondary { color: var(--text-secondary); border: 1px solid var(--border-primary); background: transparent; }
-.primary { color: white; border: 1px solid var(--primary); background: var(--primary); }
+.primary { color: var(--on-primary); border: 1px solid var(--primary); background: var(--primary); }
 </style>

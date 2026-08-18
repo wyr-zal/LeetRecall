@@ -53,7 +53,7 @@ function statusClass(item: ReviewQueueItem): string {
   min-height: 0;
   padding: 18px 12px 12px 18px;
   overflow: hidden;
-  background: #222222;
+  background: var(--bg-card);
   flex-direction: column;
 }
 .queue-heading {

@@ -33,31 +33,67 @@ let widgetInputs = new Map<string, HTMLInputElement>()
 
 const resultMap = computed(() => new Map(props.results?.map((item) => [item.blankKey, item])))
 
+const BRACKET_PAIRS: Record<string, string> = { '(': ')', '[': ']', '{': '}', '"': '"', "'": "'" }
+const CLOSING_CHARS = new Set([')', ']', '}'])
+let measureContext: CanvasRenderingContext2D | null = null
+
+function measureTextWidth(text: string, font: string): number {
+  measureContext ??= document.createElement('canvas').getContext('2d')
+  if (!measureContext) return text.length * 9
+  measureContext.font = font
+  return measureContext.measureText(text).width
+}
+
+function fitInputWidth(input: HTMLInputElement): void {
+  const text = input.value.length > 0 ? input.value : input.placeholder
+  const font = getComputedStyle(input).font || '12px monospace'
+  const editorWidth = editorRef.value?.clientWidth ?? 600
+  const maxWidth = Math.max(260, editorWidth - 160)
+  input.style.width = `${Math.min(Math.max(90, Math.ceil(measureTextWidth(text, font)) + 30), maxWidth)}px`
+}
+
+function syncInput(key: string, input: HTMLInputElement): void {
+  fitInputWidth(input)
+  emit('update:answers', { ...props.answers, [key]: input.value })
+}
+
+function handleBlankKeydown(event: KeyboardEvent, key: string, input: HTMLInputElement): void {
+  event.stopPropagation()
+  const { selectionStart, selectionEnd, value } = input
+  if (selectionStart === null || selectionEnd === null) return
+  const collapsed = selectionStart === selectionEnd
+
+  if (event.key === 'Backspace' && collapsed && selectionStart > 0) {
+    const previous = value[selectionStart - 1] ?? ''
+    if (BRACKET_PAIRS[previous] && value[selectionStart] === BRACKET_PAIRS[previous]) {
+      event.preventDefault()
+      input.setRangeText('', selectionStart - 1, selectionStart + 1, 'start')
+      syncInput(key, input)
+    }
+    return
+  }
+  if (collapsed && (CLOSING_CHARS.has(event.key) || event.key === '"' || event.key === "'")
+      && value[selectionStart] === event.key) {
+    event.preventDefault()
+    input.setSelectionRange(selectionStart + 1, selectionStart + 1)
+    return
+  }
+  const closing = BRACKET_PAIRS[event.key]
+  if (closing) {
+    event.preventDefault()
+    const selected = value.slice(selectionStart, selectionEnd)
+    input.setRangeText(event.key + selected + closing, selectionStart, selectionEnd, 'start')
+    input.setSelectionRange(selectionStart + 1, selectionStart + 1 + selected.length)
+    syncInput(key, input)
+  }
+}
+
 onMounted(() => {
   if (!editorRef.value) return
-  monaco.editor.defineTheme('leetRecallDark', {
-    base: 'vs-dark',
-    inherit: true,
-    rules: [
-      { token: 'keyword', foreground: 'C084FC' },
-      { token: 'type.identifier', foreground: '5EEAD4' },
-      { token: 'identifier', foreground: 'D8DEE9' },
-      { token: 'number', foreground: 'F59E0B' },
-    ],
-    colors: {
-      'editor.background': '#1e1e1e',
-      'editor.foreground': '#d8dee9',
-      'editorLineNumber.foreground': '#465062',
-      'editorLineNumber.activeForeground': '#8490a2',
-      'editor.lineHighlightBackground': '#252526',
-      'editorCursor.foreground': '#ffa116',
-      'editor.selectionBackground': '#4a3a20',
-      'editorIndentGuide.background1': '#333333',
-    },
-  })
+  updateEditorTheme()
   editor = monaco.editor.create(editorRef.value, {
     language: 'java',
-    theme: 'leetRecallDark',
+    theme: 'leetRecall',
     fontFamily: '"JetBrains Mono", "Cascadia Code", Consolas, monospace',
     fontSize: fontSize.value,
     lineHeight: 24,
@@ -86,13 +122,40 @@ onMounted(() => {
   resizeObserver = new ResizeObserver(() => editor?.layout())
   resizeObserver.observe(editorRef.value)
   document.addEventListener('fullscreenchange', handleFullscreenChange)
+  document.addEventListener('leet-recall:theme-change', updateEditorTheme)
 })
+
+function updateEditorTheme(): void {
+  const styles = getComputedStyle(document.documentElement)
+  monaco.editor.defineTheme('leetRecall', {
+    base: document.documentElement.dataset.theme === 'light' ? 'vs' : 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: 'keyword', foreground: document.documentElement.dataset.theme === 'light' ? '7C3AED' : 'C084FC' },
+      { token: 'type.identifier', foreground: document.documentElement.dataset.theme === 'light' ? '0F766E' : '5EEAD4' },
+      { token: 'identifier', foreground: styles.getPropertyValue('--code-text').trim() },
+      { token: 'number', foreground: document.documentElement.dataset.theme === 'light' ? 'B45309' : 'F59E0B' },
+    ],
+    colors: {
+      'editor.background': styles.getPropertyValue('--code-surface').trim(),
+      'editor.foreground': styles.getPropertyValue('--code-text').trim(),
+      'editorLineNumber.foreground': '#728096',
+      'editorLineNumber.activeForeground': '#465062',
+      'editor.lineHighlightBackground': styles.getPropertyValue('--code-surface-raised').trim(),
+      'editorCursor.foreground': styles.getPropertyValue('--primary').trim(),
+      'editor.selectionBackground': '#d9e1eb',
+      'editorIndentGuide.background1': styles.getPropertyValue('--border-primary').trim(),
+    },
+  })
+  monaco.editor.setTheme('leetRecall')
+}
 
 onBeforeUnmount(() => {
   disposeWidgets()
   resizeObserver?.disconnect()
   editor?.dispose()
   document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  document.removeEventListener('leet-recall:theme-change', updateEditorTheme)
 })
 
 watch(() => [props.templateCode, props.answerCode], () => {
@@ -101,7 +164,10 @@ watch(() => [props.templateCode, props.answerCode], () => {
 
 watch(() => props.answers, (answers) => {
   for (const [key, input] of widgetInputs) {
-    if (input.value !== (answers[key] ?? '')) input.value = answers[key] ?? ''
+    if (input.value !== (answers[key] ?? '')) {
+      input.value = answers[key] ?? ''
+      fitInputWidth(input)
+    }
   }
 }, { deep: true })
 
@@ -138,7 +204,10 @@ function renderModel(): void {
     widgets.push(widget)
     editor.addContentWidget(widget)
   }
-  nextTick(applyResultStyles)
+  nextTick(() => {
+    applyResultStyles()
+    for (const input of widgetInputs.values()) fitInputWidth(input)
+  })
 }
 
 function createWidget(key: string, position: monaco.Position): monaco.editor.IContentWidget {
@@ -151,11 +220,8 @@ function createWidget(key: string, position: monaco.Position): monaco.editor.ICo
   input.setAttribute('aria-label', `${key} 默写空位`)
   input.autocomplete = 'off'
   input.spellcheck = false
-  input.addEventListener('input', () => {
-    input.style.width = `${Math.max(90, Math.min(260, input.value.length * 9 + 38))}px`
-    emit('update:answers', { ...props.answers, [key]: input.value })
-  })
-  input.addEventListener('keydown', (event) => event.stopPropagation())
+  input.addEventListener('input', () => syncInput(key, input))
+  input.addEventListener('keydown', (event) => handleBlankKeydown(event, key, input))
   node.append(input)
   widgetInputs.set(key, input)
   return {
@@ -227,7 +293,7 @@ function handleFullscreenChange(): void {
   overflow: hidden;
   border: 1px solid var(--border-primary);
   border-radius: 8px;
-  background: #1e1e1e;
+  background: var(--code-surface);
   box-shadow: none;
 }
 .editor-shell:fullscreen { width: 100vw; height: 100vh; border: 0; border-radius: 0; }
@@ -239,7 +305,7 @@ function handleFullscreenChange(): void {
   height: 46px;
   padding: 0 12px 0 15px;
   border-bottom: 1px solid var(--border-secondary);
-  background: #252526;
+  background: var(--code-surface-raised);
   box-shadow: none;
 }
 .language { color: var(--text-secondary); font-size: 13px; font-weight: 560; }
@@ -256,7 +322,7 @@ function handleFullscreenChange(): void {
 }
 .toolbar-actions button:hover { color: var(--text-primary); background: var(--bg-card-hover); }
 .font-size, .copied { color: var(--text-muted); font-size: 11px; }
-.copied { margin-right: 5px; color: #4ade80; }
+.copied { margin-right: 5px; color: var(--success); }
 .editor { height: 470px; }
 :deep(.dictation-blank-widget) {
   transform: translateY(-2px);
@@ -265,16 +331,16 @@ function handleFullscreenChange(): void {
   width: 112px;
   height: 23px;
   padding: 0 7px;
-  color: #eff2f6;
+  color: var(--text-primary);
   font: 12px/21px "JetBrains Mono", "Cascadia Code", Consolas, monospace;
   border: 1px solid var(--primary);
   border-radius: 4px;
   outline: none;
-  background: #3a2c18;
+  background: var(--primary-soft);
   box-shadow: 0 0 0 2px rgba(255, 161, 22, 0.08);
 }
-:deep(.dictation-blank-widget input:focus) { border-color: #ffd08a; background: #46351d; }
-:deep(.dictation-blank-widget input.is-correct) { color: #bbf7d0; border-color: var(--success); background: rgba(34, 197, 94, 0.16); }
-:deep(.dictation-blank-widget input.is-incorrect) { color: #fecaca; border-color: var(--danger); background: rgba(239, 68, 68, 0.15); }
+:deep(.dictation-blank-widget input:focus) { border-color: var(--primary-hover); background: var(--primary-soft); }
+:deep(.dictation-blank-widget input.is-correct) { color: var(--success-strong); border-color: var(--success); background: rgba(34, 197, 94, 0.16); }
+:deep(.dictation-blank-widget input.is-incorrect) { color: var(--danger-strong); border-color: var(--danger); background: var(--danger-soft); }
 @media (max-width: 720px) { .editor { height: 420px; } }
 </style>

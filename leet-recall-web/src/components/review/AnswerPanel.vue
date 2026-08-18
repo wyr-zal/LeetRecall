@@ -41,10 +41,10 @@ defineEmits<{ toggle: [] }>()
   overflow: hidden;
   border: 1px solid var(--border-primary);
   border-radius: 8px;
-  background: #222222;
+  background: var(--bg-card);
   box-shadow: none;
 }
-.answer-panel:hover { border-color: #505050; }
+.answer-panel:hover { border-color: var(--border-hover); }
 .answer-toggle {
   display: flex;
   align-items: center;
@@ -76,12 +76,12 @@ pre {
   padding: 13px;
   margin: 0;
   overflow: auto;
-  color: #c8d4e7;
+  color: var(--code-text);
   font-size: 12px;
   line-height: 1.65;
   border-radius: 6px;
   border: 1px solid var(--border-secondary);
-  background: #1e1e1e;
+  background: var(--code-surface);
 }
 @media (max-width: 640px) {
   .answer-content { grid-template-columns: 1fr; }

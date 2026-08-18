@@ -30,6 +30,7 @@ const {
   currentAnswers,
   currentAccuracy,
   viewedAnswer,
+  answerVisible,
   revealedAnswer,
   submitResult,
   history,
@@ -96,7 +97,7 @@ async function openRecord(recordId: number): Promise<void> {
               :template-code="currentProblem.templateCode"
               :answers="currentAnswers"
               :results="submitResult?.resultItems"
-              :answer-code="revealedAnswer?.fullCode"
+              :answer-code="answerVisible ? revealedAnswer?.fullCode : undefined"
               @update:answers="store.updateAnswers"
             />
             <div v-if="submitResult" class="score-message" role="status">
@@ -107,8 +108,9 @@ async function openRecord(recordId: number): Promise<void> {
             <DictationActions
               :submitting="submitting"
               :viewed-answer="viewedAnswer"
+              :answer-visible="answerVisible"
               @reset="resetOpen = true"
-              @answer="store.showAnswer"
+              @answer="store.toggleAnswer"
               @submit="store.submit"
             />
           </template>

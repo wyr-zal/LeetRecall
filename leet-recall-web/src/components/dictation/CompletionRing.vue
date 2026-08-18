@@ -15,10 +15,10 @@ const safeAccuracy = computed(() => Math.max(0, Math.min(100, Math.round(props.a
 </template>
 
 <style scoped>
-.completion { display: grid; padding: 18px; justify-items: center; background: #222222; }
+.completion { display: grid; padding: 18px; justify-items: center; background: var(--bg-card); }
 h2 { justify-self: start; margin: 0 0 18px; font-size: 15px; font-weight: 650; }
-.ring { position: relative; display: grid; width: 118px; height: 118px; border-radius: 50%; place-items: center; background: conic-gradient(var(--primary) var(--accuracy), #3a3a3a 0); box-shadow: none; }
-.ring::before { position: absolute; width: 90px; height: 90px; content: ''; border: 1px solid var(--border-secondary); border-radius: 50%; background: #222222; }
+.ring { position: relative; display: grid; width: 118px; height: 118px; border-radius: 50%; place-items: center; background: conic-gradient(var(--primary) var(--accuracy), var(--border-primary) 0); box-shadow: none; }
+.ring::before { position: absolute; width: 90px; height: 90px; content: ''; border: 1px solid var(--border-secondary); border-radius: 50%; background: var(--bg-card); }
 .ring > div { z-index: 1; }
 strong { font-size: 30px; font-weight: 650; }
 .ring span { color: var(--text-secondary); font-size: 14px; }

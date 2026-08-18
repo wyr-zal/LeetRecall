@@ -61,26 +61,26 @@ const html = computed(() => renderMarkdown(props.markdown))
 }
 .markdown-content :deep(code) {
   padding: 2px 5px;
-  color: #ffd08a;
+  color: var(--primary-hover);
   font-size: 0.92em;
   border: 1px solid var(--border-secondary);
   border-radius: 4px;
-  background: #252525;
+  background: var(--code-surface-raised);
 }
 .markdown-content :deep(pre) {
   max-height: 420px;
   padding: 14px;
   overflow: auto;
-  color: #d4d4d4;
+  color: var(--code-text);
   line-height: 1.65;
   border: 1px solid var(--border-secondary);
   border-radius: 6px;
-  background: #1e1e1e;
+  background: var(--code-surface);
 }
 .markdown-content :deep(pre code) { padding: 0; color: inherit; border: 0; background: none; }
 .markdown-content :deep(table) { width: 100%; border-collapse: collapse; }
 .markdown-content :deep(th),
 .markdown-content :deep(td) { padding: 8px 10px; text-align: left; border: 1px solid var(--border-primary); }
-.markdown-content :deep(th) { color: var(--text-primary); background: #252525; }
+.markdown-content :deep(th) { color: var(--text-primary); background: var(--code-surface-raised); }
 .markdown-content :deep(hr) { margin: 20px 0; border: 0; border-top: 1px solid var(--border-primary); }
 </style>

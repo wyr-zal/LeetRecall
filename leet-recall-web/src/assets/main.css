@@ -14,6 +14,7 @@
   --border-primary: #3a3a3a;
   --border-secondary: #333333;
   --border-highlight: rgba(255, 255, 255, 0.035);
+  --border-hover: #505050;
   --text-primary: #eff2f6;
   --text-secondary: #c5c5c5;
   --text-muted: #9e9e9e;
@@ -23,6 +24,17 @@
   --success: #00b8a3;
   --warning: #ffc01e;
   --danger: #ff375f;
+  --danger-strong: #ff9aac;
+  --danger-soft: rgba(239, 68, 68, 0.08);
+  --success-strong: #73d9cd;
+  --warning-strong: #f3c969;
+  --code-surface: #1e1e1e;
+  --code-surface-raised: #252525;
+  --code-text: #c8d4e7;
+  --placeholder: #707070;
+  --on-primary: #1a1a1a;
+  --disabled-text: #777777;
+  --disabled-surface: #353535;
   --shadow-low: 0 1px 2px rgba(0, 0, 0, 0.2);
   --shadow-medium: 0 8px 24px rgba(0, 0, 0, 0.2);
   --shadow-high: 0 18px 42px rgba(0, 0, 0, 0.34);
@@ -33,6 +45,44 @@
   background: var(--bg-primary);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg-primary: #f6f7f9;
+  --bg-sidebar: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f0f2f5;
+  --bg-input: #fbfcfd;
+  --surface-raised: #ffffff;
+  --surface-overlay: #ffffff;
+  --border-primary: #d9dee7;
+  --border-secondary: #e8ebf0;
+  --border-highlight: rgba(15, 23, 42, 0.05);
+  --border-hover: #b7c0cd;
+  --text-primary: #18212f;
+  --text-secondary: #4b596b;
+  --text-muted: #6f7d8e;
+  --primary: #e68500;
+  --primary-hover: #bd6d00;
+  --primary-soft: rgba(230, 133, 0, 0.11);
+  --success: #078777;
+  --warning: #b77900;
+  --danger: #d92d4c;
+  --danger-strong: #bd2340;
+  --danger-soft: rgba(217, 45, 76, 0.08);
+  --success-strong: #087d70;
+  --warning-strong: #9a6400;
+  --code-surface: #f3f5f8;
+  --code-surface-raised: #e9edf2;
+  --code-text: #263548;
+  --placeholder: #7a8796;
+  --on-primary: #ffffff;
+  --disabled-text: #8893a1;
+  --disabled-surface: #e5e9ef;
+  --shadow-low: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-medium: 0 8px 24px rgba(15, 23, 42, 0.08);
+  --shadow-high: 0 18px 42px rgba(15, 23, 42, 0.14);
 }
 
 * {
@@ -90,7 +140,7 @@ pre,
 }
 
 ::selection {
-  color: #1a1a1a;
+  color: var(--on-primary);
   background: rgba(255, 161, 22, 0.82);
 }
 
@@ -131,7 +181,7 @@ select {
 input:hover,
 textarea:hover,
 select:hover {
-  border-color: #505050;
+  border-color: var(--border-hover);
 }
 
 input:focus,

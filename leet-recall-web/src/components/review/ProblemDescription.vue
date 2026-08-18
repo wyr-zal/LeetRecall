@@ -32,7 +32,7 @@ defineProps<{ markdown: string }>()
   color: var(--text-muted);
   border: 1px dashed var(--border-primary);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.012);
+  background: var(--border-highlight);
 }
 .description-empty svg { color: var(--primary); }
 .description-empty strong { color: var(--text-secondary); font-size: 14px; }

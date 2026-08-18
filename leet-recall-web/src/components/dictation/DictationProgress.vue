@@ -28,7 +28,7 @@ button { display: inline-flex; align-items: center; justify-content: center; gap
 .track { height: 4px; margin-top: 10px; overflow: hidden; border-radius: 99px; background: var(--border-primary); }
 .track span { display: block; height: 100%; border-radius: inherit; background: var(--primary); box-shadow: none; transition: width 220ms ease; }
 .navigation { display: flex; justify-content: flex-end; gap: 10px; }
-.navigation .primary { color: #1a1a1a; border-color: var(--primary); background: var(--primary); box-shadow: none; }
+.navigation .primary { color: var(--on-primary); border-color: var(--primary); background: var(--primary); box-shadow: none; }
 @media (max-width: 900px) {
   .dictation-progress { grid-template-columns: 1fr 1fr; }
   .center-progress { grid-row: 2; grid-column: 1 / -1; }

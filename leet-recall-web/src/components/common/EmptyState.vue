@@ -43,7 +43,7 @@ h2 {
 button {
   min-height: 42px;
   padding: 0 17px;
-  color: #1a1a1a;
+  color: var(--on-primary);
   border: 1px solid var(--primary);
   border-radius: 8px;
   background: var(--primary);

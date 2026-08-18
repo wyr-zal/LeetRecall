@@ -16,7 +16,7 @@ defineProps<{ label: string }>()
   font-size: 12px;
   border: 1px solid var(--border-secondary);
   border-radius: 6px;
-  background: #333333;
+  background: var(--surface-overlay);
   box-shadow: none;
 }
 </style>

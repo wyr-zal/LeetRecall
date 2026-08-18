@@ -21,11 +21,11 @@ defineEmits<{ toggle: [] }>()
   overflow: hidden;
   border: 1px solid var(--border-primary);
   border-radius: 8px;
-  background: #222222;
+  background: var(--bg-card);
   box-shadow: none;
 }
 
-.hint-panel:hover { border-color: #505050; }
+.hint-panel:hover { border-color: var(--border-hover); }
 
 button {
   display: flex;
