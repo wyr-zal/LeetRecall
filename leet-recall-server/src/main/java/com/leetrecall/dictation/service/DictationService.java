@@ -37,6 +37,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -44,6 +46,7 @@ public class DictationService {
 
     private static final TypeReference<Map<String, String>> STRING_MAP = new TypeReference<>() { };
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() { };
+    private static final Pattern BLANK_LINE = Pattern.compile("\\{\\{([a-z][a-z0-9_]*)}}");
 
     private final DictationTemplateMapper templateMapper;
     private final DictationRecordMapper recordMapper;
@@ -88,7 +91,7 @@ public class DictationService {
                 problem.getTitle(),
                 problemTagMapper.selectTagNames(problemId, 2),
                 template.getLanguage(),
-                template.getTemplateCode(),
+                indentPlaceholders(template.getTemplateCode(), readMap(template.getAnswerJson())),
                 readList(template.getKeywordJson()),
                 mistakes
         );
@@ -188,9 +191,35 @@ public class DictationService {
                 .map(Map.Entry::getKey)
                 .toList();
         return new DictationRecordDetailVO(
-                record.getId(), record.getTemplateCodeSnapshot(), submitted, correct, incorrect,
+                record.getId(),
+                indentPlaceholders(record.getTemplateCodeSnapshot(), correct),
+                submitted, correct, incorrect,
                 Boolean.TRUE.equals(record.getViewedAnswer()), legacySnapshot
         );
+    }
+
+    /**
+     * 导入契约要求占位符顶格独占一行、缩进保存在答案里；展示时把答案首行缩进
+     * 补到占位符前，让空位落在代码规范的位置。评分按去空白比较，不受影响。
+     */
+    private String indentPlaceholders(String templateCode, Map<String, String> answers) {
+        if (templateCode == null || answers == null || answers.isEmpty()) return templateCode;
+        String[] lines = templateCode.split("\n", -1);
+        for (int index = 0; index < lines.length; index++) {
+            Matcher matcher = BLANK_LINE.matcher(lines[index]);
+            if (!matcher.matches()) continue;
+            String answer = answers.get(matcher.group(1));
+            if (answer == null) continue;
+            String indent = leadingWhitespace(answer);
+            if (!indent.isEmpty()) lines[index] = indent + lines[index];
+        }
+        return String.join("\n", lines);
+    }
+
+    private String leadingWhitespace(String text) {
+        int end = 0;
+        while (end < text.length() && (text.charAt(end) == ' ' || text.charAt(end) == '\t')) end++;
+        return text.substring(0, end);
     }
 
     private Problem requireProblem(Long problemId) {
