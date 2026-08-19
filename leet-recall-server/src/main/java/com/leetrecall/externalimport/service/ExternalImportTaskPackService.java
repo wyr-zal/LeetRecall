@@ -35,11 +35,12 @@ public class ExternalImportTaskPackService {
                 + "- `mistakes` 写 2～4 条真实易错点；`hint` 不超过 100 字。\n"
                 + "- `fullCode` 是可提交的完整 Java 代码，必须实现下方官方类名和方法签名；`keyCode` 必须是完整代码中的连续关键片段。\n"
                 + "- `descriptionMarkdown` 必须是非空、可正常渲染的 Markdown 题面。允许改写正文和调整标题、段落、列表、引用、示例、分隔线及来源链接；代码围栏必须成对闭合。\n"
+                + "- `noteMarkdown` 是这道题的个人复习笔记，用 Markdown 写推导过程、模板套路、复杂度和延伸变体，代码围栏必须成对闭合；可以省略，省略时系统不会写入笔记。\n"
                 + "- `dictation` 至少使用 1 个唯一 `{{blank_n}}`，答案键必须完全一致，回填后必须逐字符恢复 `fullCode`。\n"
                 + "- 请只输出规定字段。额外字段不会参与导入，系统保存草稿时会自动丢弃。\n\n"
                 + "## 官方 Java 方法签名\n```java\n" + starter + "\n```\n\n"
                 + "## JSON 字段\n"
-                + "`leetcodeNumber`, `title`, `difficulty`, `descriptionMarkdown`, `tags`, `coreIdea`, `hint`, `mistakes`, `fullCode`, `keyCode`, `recallQuestions[{question,answer}]`, `dictation{language,templateCode,answers,keywords}`。\n";
+                + "`leetcodeNumber`, `title`, `difficulty`, `descriptionMarkdown`, `noteMarkdown`, `tags`, `coreIdea`, `hint`, `mistakes`, `fullCode`, `keyCode`, `recallQuestions[{question,answer}]`, `dictation{language,templateCode,answers,keywords}`。\n";
     }
 
     private String example(int number, String title, Object difficulty, String description, java.util.List<String> tags, String starter) {
@@ -49,6 +50,7 @@ public class ExternalImportTaskPackService {
             example.put("title", title);
             example.put("difficulty", difficulty.toString());
             example.put("descriptionMarkdown", description);
+            example.put("noteMarkdown", "## 思路推导\n填写你的推导过程\n\n## 代码模板\n填写可复用的写法\n\n## 复杂度\n时间 O(?)，空间 O(?)");
             example.put("tags", tags);
             example.put("coreIdea", "填写本题专属的状态、不变量和正确性理由");
             example.put("hint", "填写一个不泄露答案的行动提示");

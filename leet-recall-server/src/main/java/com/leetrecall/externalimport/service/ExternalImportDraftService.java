@@ -122,7 +122,7 @@ public class ExternalImportDraftService {
     private ExternalImportImpactVO impact(Integer number) {
         Problem problem = existingProblem(number);
         return new ExternalImportImpactVO(problem != null, problem == null ? null : problem.getId(),
-                List.of("题目 ID", "学习进度", "笔记", "复习记录", "历史默写记录"),
+                List.of("题目 ID", "学习进度", "笔记（已有内容不会被覆盖）", "复习记录", "历史默写记录"),
                 List.of("题面、核心思路、提示、易错点、回忆问答、Java 代码、当前默写模板"), problem != null);
     }
 

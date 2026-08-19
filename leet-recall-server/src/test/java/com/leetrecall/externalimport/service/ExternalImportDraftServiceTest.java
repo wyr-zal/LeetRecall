@@ -94,7 +94,7 @@ class ExternalImportDraftServiceTest {
         when(problemMapper.selectOne(any())).thenReturn(null);
         readyValidation();
         ExternalImportPayload payload = payload();
-        ProblemCreateDTO create = new ProblemCreateDTO(1, "两数之和", Difficulty.EASY, "题面", List.of("数组"),
+        ProblemCreateDTO create = new ProblemCreateDTO(1, "两数之和", Difficulty.EASY, "题面", null, List.of("数组"),
                 "核心思路", "提示", List.of("易错点一", "易错点二"), "class Solution {}", "class Solution {}",
                 List.of("问题一足够具体", "问题二足够具体", "问题三足够具体"), "class Solution {}", Map.of(), List.of("数组"));
         when(validator.toProblemCreate(payload)).thenReturn(create);
@@ -138,7 +138,7 @@ class ExternalImportDraftServiceTest {
     }
 
     private ExternalImportPayload payload() {
-        return new ExternalImportPayload(1, "两数之和", Difficulty.EASY, "题面", List.of("数组"), "核心思路", "提示",
+        return new ExternalImportPayload(1, "两数之和", Difficulty.EASY, "题面", "## 我的笔记", List.of("数组"), "核心思路", "提示",
                 List.of("易错点一", "易错点二"), "class Solution {}", "class Solution {}",
                 List.of(new ExternalImportPayload.RecallQuestion("问题一足够具体", "答一"), new ExternalImportPayload.RecallQuestion("问题二足够具体", "答二"), new ExternalImportPayload.RecallQuestion("问题三足够具体", "答三")),
                 new ExternalImportPayload.Dictation("JAVA", "class Solution {}", Map.of(), List.of("数组")));

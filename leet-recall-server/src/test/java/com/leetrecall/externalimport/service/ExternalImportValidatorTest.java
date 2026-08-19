@@ -271,6 +271,55 @@ class ExternalImportValidatorTest {
         assertThat(result.errors()).singleElement().asString().contains("JSON 字段 recallQuestions 类型不正确");
     }
 
+    @Test
+    void acceptsAPayloadWithoutTheOptionalNote() {
+        Map<String, Object> payload = validPayload();
+        payload.remove("noteMarkdown");
+
+        var result = validator.validateRaw(write(payload), expected, official);
+
+        assertThat(result.ready()).describedAs(result.errors().toString()).isTrue();
+        assertThat(result.payload().noteMarkdown()).isNull();
+    }
+
+    @Test
+    void keepsTheNoteInTheSanitizedDraftContent() throws Exception {
+        Map<String, Object> payload = validPayload();
+        payload.put("noteMarkdown", "## 我的推导\n先固定右边界再收缩左边界。");
+
+        String sanitized = validator.sanitizeForStorage(write(payload));
+
+        assertThat(objectMapper.readTree(sanitized).path("noteMarkdown").asText())
+                .isEqualTo("## 我的推导\n先固定右边界再收缩左边界。");
+    }
+
+    @Test
+    void rejectsUnclosedNoteFenceWithExactLineNumber() {
+        Map<String, Object> payload = validPayload();
+        payload.put("noteMarkdown", """
+                笔记正文
+
+                ```java
+                int[] result = new int[0];
+                """);
+
+        var result = validator.validateRaw(write(payload), expected, official);
+
+        assertThat(result.ready()).isFalse();
+        assertThat(result.errors()).contains("noteMarkdown 第 3 行：代码围栏 ``` 未闭合，请在代码块末尾补上同类型围栏");
+    }
+
+    @Test
+    void rejectsANoteLongerThanTheDatabaseColumnAllows() {
+        Map<String, Object> payload = validPayload();
+        payload.put("noteMarkdown", "笔".repeat(100_001));
+
+        var result = validator.validateRaw(write(payload), expected, official);
+
+        assertThat(result.ready()).isFalse();
+        assertThat(result.errors()).anyMatch(error -> error.startsWith("noteMarkdown：当前 100001 字"));
+    }
+
     private Hot100OfficialSource.OfficialProblem officialWithDescription(String description) {
         return new Hot100OfficialSource.OfficialProblem("哈希", 1, "两数之和", Difficulty.EASY,
                 "https://leetcode.cn/problems/two-sum/", 1, description, List.of("数组"),
@@ -283,6 +332,7 @@ class ExternalImportValidatorTest {
         payload.put("title", "两数之和");
         payload.put("difficulty", "EASY");
         payload.put("descriptionMarkdown", "题面原文");
+        payload.put("noteMarkdown", "## 我的笔记\n哈希表存值到下标的映射。");
         payload.put("tags", List.of("数组"));
         payload.put("coreIdea", "遍历时维护补数映射，并说明首次命中即正确的原因。");
         payload.put("hint", "先判断补数再写入当前值。");

@@ -13,11 +13,13 @@ import com.leetrecall.importdata.dto.ProblemCreateDTO;
 import com.leetrecall.importdata.vo.ProblemCreatedVO;
 import com.leetrecall.problem.entity.Problem;
 import com.leetrecall.problem.entity.ProblemMistake;
+import com.leetrecall.problem.entity.ProblemNote;
 import com.leetrecall.problem.entity.ProblemTag;
 import com.leetrecall.problem.entity.RecallQuestion;
 import com.leetrecall.problem.entity.Tag;
 import com.leetrecall.problem.mapper.ProblemMapper;
 import com.leetrecall.problem.mapper.ProblemMistakeMapper;
+import com.leetrecall.problem.mapper.ProblemNoteMapper;
 import com.leetrecall.problem.mapper.ProblemTagMapper;
 import com.leetrecall.problem.mapper.RecallQuestionMapper;
 import com.leetrecall.problem.mapper.TagMapper;
@@ -42,13 +44,15 @@ public class ProblemImportService {
     private final ProblemMistakeMapper problemMistakeMapper;
     private final DictationTemplateMapper dictationTemplateMapper;
     private final ProblemProgressMapper problemProgressMapper;
+    private final ProblemNoteMapper problemNoteMapper;
     private final ObjectMapper objectMapper;
     private final Clock applicationClock;
     private final Hot100ManifestService hot100ManifestService;
 
     /**
      * 外部 JSON 导入专用覆盖入口：复用 problem.id，并只重建题目内容子表。
-     * progress、note、review_record、dictation_record 和 answer_view 均不触碰。
+     * progress、review_record、dictation_record 和 answer_view 均不触碰；
+     * note 只在这道题还没有笔记时写入 JSON 里的 noteMarkdown，已有手写笔记一律保留。
      */
     @Transactional
     public ProblemCreatedVO upsertExternal(ProblemCreateDTO request, List<String> recallAnswers) {
@@ -84,6 +88,7 @@ public class ProblemImportService {
         problemTagMapper.delete(new LambdaQueryWrapper<ProblemTag>().eq(ProblemTag::getProblemId, problem.getId()));
         dictationTemplateMapper.delete(new LambdaQueryWrapper<DictationTemplate>().eq(DictationTemplate::getProblemId, problem.getId()));
         persistChildren(problem.getId(), request, normalizedRecallAnswers, now);
+        persistNoteWhenAbsent(problem.getId(), request.noteMarkdown(), now);
         if (!existing) {
             ProblemProgress progress = new ProblemProgress();
             progress.setProblemId(problem.getId());
@@ -122,6 +127,26 @@ public class ProblemImportService {
         template.setProblemId(problemId); template.setLanguage(Language.JAVA); template.setTemplateCode(request.dictationTemplate().strip());
         template.setAnswerJson(writeJson(request.dictationAnswers())); template.setKeywordJson(writeJson(request.keywords())); template.setCreatedAt(now); template.setUpdatedAt(now);
         dictationTemplateMapper.insert(template);
+    }
+
+    /** 笔记是用户手写内容，导入只补空白：没有记录时新建，记录内容为空白时填充，已有内容直接跳过。 */
+    private void persistNoteWhenAbsent(Long problemId, String noteMarkdown, LocalDateTime now) {
+        if (noteMarkdown == null || noteMarkdown.isBlank()) return;
+        ProblemNote existing = problemNoteMapper.selectOne(new LambdaQueryWrapper<ProblemNote>()
+                .eq(ProblemNote::getProblemId, problemId));
+        if (existing == null) {
+            ProblemNote note = new ProblemNote();
+            note.setProblemId(problemId);
+            note.setContentMarkdown(noteMarkdown.strip());
+            note.setCreatedAt(now);
+            note.setUpdatedAt(now);
+            problemNoteMapper.insert(note);
+            return;
+        }
+        if (existing.getContentMarkdown() != null && !existing.getContentMarkdown().isBlank()) return;
+        existing.setContentMarkdown(noteMarkdown.strip());
+        existing.setUpdatedAt(now);
+        problemNoteMapper.updateById(existing);
     }
 
     private String writeJson(Object value) {

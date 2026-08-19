@@ -26,7 +26,7 @@ import java.util.regex.Pattern;
 @Component
 @RequiredArgsConstructor
 public class ExternalImportValidator {
-    private static final Set<String> ROOT_FIELDS = Set.of("leetcodeNumber", "title", "difficulty", "descriptionMarkdown", "tags",
+    private static final Set<String> ROOT_FIELDS = Set.of("leetcodeNumber", "title", "difficulty", "descriptionMarkdown", "noteMarkdown", "tags",
             "coreIdea", "hint", "mistakes", "fullCode", "keyCode", "recallQuestions", "dictation");
     private static final Set<String> QUESTION_FIELDS = Set.of("question", "answer");
     private static final Set<String> DICTATION_FIELDS = Set.of("language", "templateCode", "answers", "keywords");
@@ -35,6 +35,7 @@ public class ExternalImportValidator {
     private static final Pattern METHOD_PATTERN = Pattern.compile("\\bpublic\\s+(?:static\\s+)?(?:<[^>]+>\\s*)?[A-Za-z_$][A-Za-z0-9_$<>\\[\\], ?]*\\s+([A-Za-z_$][A-Za-z0-9_$]*)\\s*\\(([^)]*)\\)");
     private static final Pattern FENCE_PATTERN = Pattern.compile("^\\s{0,3}(`{3,}|~{3,})(.*)$");
     private static final int MAX_DESCRIPTION_LENGTH = 100_000;
+    private static final int MAX_NOTE_LENGTH = 100_000;
 
     private final ObjectMapper objectMapper;
     private final JavaCompileService javaCompileService;
@@ -121,6 +122,7 @@ public class ExternalImportValidator {
             errors.add("difficulty：必须为 " + expected.difficulty() + "，实际为 " + displayValue(payload.difficulty()));
         }
         validateDescriptionMarkdown(payload.descriptionMarkdown(), errors);
+        validateNoteMarkdown(payload.noteMarkdown(), errors);
         validateTextList(payload.tags(), 50, "tags", errors);
         required(payload.coreIdea(), "缺少核心思路", errors);
         required(payload.hint(), "缺少提示", errors);
@@ -142,7 +144,7 @@ public class ExternalImportValidator {
 
     public ProblemCreateDTO toProblemCreate(ExternalImportPayload payload) {
         return new ProblemCreateDTO(payload.leetcodeNumber(), payload.title(), payload.difficulty(), payload.descriptionMarkdown(),
-                payload.tags(), payload.coreIdea(), payload.hint(), payload.mistakes(), payload.fullCode(), payload.keyCode(),
+                payload.noteMarkdown(), payload.tags(), payload.coreIdea(), payload.hint(), payload.mistakes(), payload.fullCode(), payload.keyCode(),
                 payload.recallQuestions().stream().map(ExternalImportPayload.RecallQuestion::question).toList(),
                 payload.dictation().templateCode(), payload.dictation().answers(), payload.dictation().keywords());
     }
@@ -335,6 +337,19 @@ public class ExternalImportValidator {
         if (markdown.length() > MAX_DESCRIPTION_LENGTH) {
             errors.add("descriptionMarkdown：当前 " + markdown.length() + " 字，最多允许 " + MAX_DESCRIPTION_LENGTH + " 字");
         }
+        validateMarkdownFence(markdown, "descriptionMarkdown", errors);
+    }
+
+    /** 笔记是可选字段：缺省或全空白视为不导入笔记，只在有内容时按 Markdown 校验。 */
+    private void validateNoteMarkdown(String markdown, List<String> errors) {
+        if (blank(markdown)) return;
+        if (markdown.length() > MAX_NOTE_LENGTH) {
+            errors.add("noteMarkdown：当前 " + markdown.length() + " 字，最多允许 " + MAX_NOTE_LENGTH + " 字");
+        }
+        validateMarkdownFence(markdown, "noteMarkdown", errors);
+    }
+
+    private void validateMarkdownFence(String markdown, String field, List<String> errors) {
         String[] lines = markdown.replace("\r\n", "\n").split("\n", -1);
         Character openingCharacter = null;
         int openingLength = 0;
@@ -358,7 +373,7 @@ public class ExternalImportValidator {
             }
         }
         if (openingCharacter != null) {
-            errors.add("descriptionMarkdown 第 " + openingLine + " 行：代码围栏 " + openingMarker + " 未闭合，请在代码块末尾补上同类型围栏");
+            errors.add(field + " 第 " + openingLine + " 行：代码围栏 " + openingMarker + " 未闭合，请在代码块末尾补上同类型围栏");
         }
     }
 

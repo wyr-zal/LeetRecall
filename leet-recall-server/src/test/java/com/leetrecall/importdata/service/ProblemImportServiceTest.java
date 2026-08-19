@@ -7,10 +7,12 @@ import com.leetrecall.hot100.service.Hot100ManifestService;
 import com.leetrecall.dictation.mapper.DictationTemplateMapper;
 import com.leetrecall.importdata.dto.ProblemCreateDTO;
 import com.leetrecall.problem.entity.Problem;
+import com.leetrecall.problem.entity.ProblemNote;
 import com.leetrecall.problem.entity.RecallQuestion;
 import com.leetrecall.problem.entity.Tag;
 import com.leetrecall.problem.mapper.ProblemMapper;
 import com.leetrecall.problem.mapper.ProblemMistakeMapper;
+import com.leetrecall.problem.mapper.ProblemNoteMapper;
 import com.leetrecall.problem.mapper.ProblemTagMapper;
 import com.leetrecall.problem.mapper.RecallQuestionMapper;
 import com.leetrecall.problem.mapper.TagMapper;
@@ -46,6 +48,7 @@ class ProblemImportServiceTest {
     @Mock private ProblemMistakeMapper problemMistakeMapper;
     @Mock private DictationTemplateMapper dictationTemplateMapper;
     @Mock private ProblemProgressMapper problemProgressMapper;
+    @Mock private ProblemNoteMapper problemNoteMapper;
     @Mock private Hot100ManifestService hot100ManifestService;
 
     private ProblemImportService service;
@@ -61,6 +64,7 @@ class ProblemImportServiceTest {
                 problemMistakeMapper,
                 dictationTemplateMapper,
                 problemProgressMapper,
+                problemNoteMapper,
                 new ObjectMapper(),
                 clock,
                 hot100ManifestService
@@ -128,12 +132,110 @@ class ProblemImportServiceTest {
         verify(problemProgressMapper, never()).insert(any(com.leetrecall.review.entity.ProblemProgress.class));
     }
 
+    @Test
+    void shouldWriteTheImportedNoteWhenTheProblemHasNoneYet() {
+        Problem existing = new Problem();
+        existing.setId(42L);
+        existing.setLeetcodeNumber(1);
+        when(problemMapper.selectOne(any())).thenReturn(existing);
+        when(hot100ManifestService.findByNumber(1)).thenReturn(new Hot100Manifest.Hot100Problem(
+                1, "哈希", 1, "两数之和", Difficulty.EASY,
+                "https://leetcode.cn/problems/two-sum/"
+        ));
+        Tag tag = new Tag(); tag.setId(7L); tag.setName("哈希表");
+        when(tagMapper.selectOne(any())).thenReturn(tag);
+        when(problemNoteMapper.selectOne(any())).thenReturn(null);
+
+        service.upsertExternal(request("## 我的笔记\n先查补数再写入。"), List.of("答一", "答二", "答三"));
+
+        ArgumentCaptor<ProblemNote> saved = ArgumentCaptor.forClass(ProblemNote.class);
+        verify(problemNoteMapper).insert(saved.capture());
+        assertThat(saved.getValue().getProblemId()).isEqualTo(42L);
+        assertThat(saved.getValue().getContentMarkdown()).isEqualTo("## 我的笔记\n先查补数再写入。");
+        verify(problemNoteMapper, never()).updateById(any(ProblemNote.class));
+    }
+
+    @Test
+    void shouldKeepAHandwrittenNoteInsteadOfOverwritingItOnImport() {
+        Problem existing = new Problem();
+        existing.setId(42L);
+        existing.setLeetcodeNumber(1);
+        when(problemMapper.selectOne(any())).thenReturn(existing);
+        when(hot100ManifestService.findByNumber(1)).thenReturn(new Hot100Manifest.Hot100Problem(
+                1, "哈希", 1, "两数之和", Difficulty.EASY,
+                "https://leetcode.cn/problems/two-sum/"
+        ));
+        Tag tag = new Tag(); tag.setId(7L); tag.setName("哈希表");
+        when(tagMapper.selectOne(any())).thenReturn(tag);
+        ProblemNote handwritten = new ProblemNote();
+        handwritten.setId(5L);
+        handwritten.setProblemId(42L);
+        handwritten.setContentMarkdown("我自己写的笔记");
+        when(problemNoteMapper.selectOne(any())).thenReturn(handwritten);
+
+        service.upsertExternal(request("## AI 生成的笔记"), List.of("答一", "答二", "答三"));
+
+        assertThat(handwritten.getContentMarkdown()).isEqualTo("我自己写的笔记");
+        verify(problemNoteMapper, never()).insert(any(ProblemNote.class));
+        verify(problemNoteMapper, never()).updateById(any(ProblemNote.class));
+    }
+
+    @Test
+    void shouldFillAnEmptyNoteRowWithTheImportedNote() {
+        Problem existing = new Problem();
+        existing.setId(42L);
+        existing.setLeetcodeNumber(1);
+        when(problemMapper.selectOne(any())).thenReturn(existing);
+        when(hot100ManifestService.findByNumber(1)).thenReturn(new Hot100Manifest.Hot100Problem(
+                1, "哈希", 1, "两数之和", Difficulty.EASY,
+                "https://leetcode.cn/problems/two-sum/"
+        ));
+        Tag tag = new Tag(); tag.setId(7L); tag.setName("哈希表");
+        when(tagMapper.selectOne(any())).thenReturn(tag);
+        ProblemNote blankNote = new ProblemNote();
+        blankNote.setId(5L);
+        blankNote.setProblemId(42L);
+        blankNote.setContentMarkdown("   ");
+        when(problemNoteMapper.selectOne(any())).thenReturn(blankNote);
+
+        service.upsertExternal(request("## AI 生成的笔记"), List.of("答一", "答二", "答三"));
+
+        verify(problemNoteMapper).updateById(blankNote);
+        assertThat(blankNote.getContentMarkdown()).isEqualTo("## AI 生成的笔记");
+    }
+
+    @Test
+    void shouldNotTouchTheNoteTableWhenTheJsonHasNoNote() {
+        when(problemMapper.selectOne(any())).thenReturn(null);
+        when(hot100ManifestService.findByNumber(1)).thenReturn(new Hot100Manifest.Hot100Problem(
+                1, "哈希", 1, "两数之和", Difficulty.EASY,
+                "https://leetcode.cn/problems/two-sum/"
+        ));
+        doAnswer(invocation -> {
+            invocation.getArgument(0, Problem.class).setId(99L);
+            return 1;
+        }).when(problemMapper).insert(any(Problem.class));
+        Tag tag = new Tag(); tag.setId(7L); tag.setName("哈希表");
+        when(tagMapper.selectOne(any())).thenReturn(tag);
+
+        service.upsertExternal(request(), List.of("答一", "答二", "答三"));
+
+        verify(problemNoteMapper, never()).selectOne(any());
+        verify(problemNoteMapper, never()).insert(any(ProblemNote.class));
+        verify(problemNoteMapper, never()).updateById(any(ProblemNote.class));
+    }
+
     private ProblemCreateDTO request() {
+        return request(null);
+    }
+
+    private ProblemCreateDTO request(String noteMarkdown) {
         return new ProblemCreateDTO(
                 1,
                 "两数之和",
                 Difficulty.EASY,
                 "给定一个整数数组和目标值，返回两个下标。",
+                noteMarkdown,
                 List.of("哈希表"),
                 "遍历时查找补数。",
                 "先查再存。",

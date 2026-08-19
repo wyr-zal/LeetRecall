@@ -399,7 +399,7 @@ function downloadJsonExample(): void {
     <ConfirmDialog
       :open="overwriteDialogOpen"
       title="确认覆盖并导入"
-      :description="`题号 ${draft?.leetcodeNumber ?? ''} 已存在。将替换当前题面、问答和默写模板，但保留学习进度、笔记、复习记录和历史默写记录。确定继续吗？`"
+      :description="`题号 ${draft?.leetcodeNumber ?? ''} 已存在。将替换当前题面、问答和默写模板，但保留学习进度、笔记、复习记录和历史默写记录。JSON 里的笔记只在这道题还没有笔记时写入。确定继续吗？`"
       confirm-label="确认覆盖并导入"
       @confirm="runImport"
       @cancel="overwriteDialogOpen = false"

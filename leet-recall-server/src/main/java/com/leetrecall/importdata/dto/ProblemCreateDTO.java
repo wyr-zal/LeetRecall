@@ -17,6 +17,7 @@ public record ProblemCreateDTO(
         @NotBlank @Size(max = 255) String title,
         @NotNull Difficulty difficulty,
         @NotBlank @Size(max = 100_000) String descriptionMarkdown,
+        @Size(max = 100_000) String noteMarkdown,
         @NotEmpty @Size(max = 10) List<@NotBlank @Size(max = 50) String> tags,
         @NotBlank String coreIdea,
         @NotBlank @Size(max = 100) String hint,

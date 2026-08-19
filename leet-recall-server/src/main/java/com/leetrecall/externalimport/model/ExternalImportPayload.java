@@ -10,6 +10,7 @@ public record ExternalImportPayload(
         String title,
         Difficulty difficulty,
         String descriptionMarkdown,
+        String noteMarkdown,
         List<String> tags,
         String coreIdea,
         String hint,
