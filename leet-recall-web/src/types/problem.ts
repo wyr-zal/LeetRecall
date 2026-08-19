@@ -49,6 +49,49 @@ export interface RecallAnswerInput {
   answer: string
 }
 
+/** 编辑模式专用：标签不截断，回忆问答带 id 以便后端差分保存。 */
+export interface ProblemContentRecallQuestion {
+  id: number
+  question: string
+  answer: string
+}
+
+export interface ProblemContent {
+  problemId: number
+  leetcodeNumber: number
+  title: string
+  difficulty: Difficulty
+  descriptionMarkdown: string
+  tags: string[]
+  recallQuestions: ProblemContentRecallQuestion[]
+  hint: string
+  coreIdea: string
+  mistakes: string[]
+  keyCode: string
+}
+
+/** 新增的问答 id 传 null，后端据此插入新行。 */
+export interface ProblemContentRecallQuestionInput {
+  id: number | null
+  question: string
+  answer: string
+}
+
+export interface ProblemContentUpdate {
+  title: string
+  difficulty: Difficulty
+  descriptionMarkdown: string
+  tags: string[]
+  recallQuestions: ProblemContentRecallQuestionInput[]
+  hint: string
+  coreIdea: string
+  mistakes: string[]
+  keyCode: string
+}
+
+/** 回忆问答上限由后端 ReviewSubmitDTO 的 @Size(max = 5) 决定，超出会让复习提交失败。 */
+export const MAX_RECALL_QUESTIONS = 5
+
 export interface ReviewSubmitRequest {
   result: Exclude<MasteryLevel, 'NEW'>
   recallAnswers: RecallAnswerInput[]

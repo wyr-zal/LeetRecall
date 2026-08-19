@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { onActivated, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { BrainCircuit, FileText, NotebookPen } from 'lucide-vue-next'
+import { BrainCircuit, FileText, NotebookPen, SquarePen } from 'lucide-vue-next'
 import { useQuickReviewStore } from '@/stores/quickReview'
 import { useReviewShortcuts } from '@/composables/useReviewShortcuts'
 import ReviewProgress from '@/components/review/ReviewProgress.vue'
 import ProblemHeader from '@/components/review/ProblemHeader.vue'
 import ProblemDescription from '@/components/review/ProblemDescription.vue'
+import ProblemContentEditor from '@/components/review/ProblemContentEditor.vue'
 import RecallQuestionList from '@/components/review/RecallQuestionList.vue'
 import HintPanel from '@/components/review/HintPanel.vue'
 import AnswerPanel from '@/components/review/AnswerPanel.vue'
@@ -17,7 +18,7 @@ import KeyboardShortcutPanel from '@/components/review/KeyboardShortcutPanel.vue
 import LoadingState from '@/components/common/LoadingState.vue'
 import ErrorState from '@/components/common/ErrorState.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-import type { MasteryLevel } from '@/types/problem'
+import type { MasteryLevel, ProblemContentUpdate } from '@/types/problem'
 
 type StudyTab = 'description' | 'recall' | 'notes'
 
@@ -34,6 +35,11 @@ const {
   error,
   completedCount,
   currentDraft,
+  editing,
+  editContent,
+  editLoading,
+  editSaving,
+  editError,
 } = storeToRefs(store)
 const activeTab = ref<StudyTab>('description')
 let firstActivation = true
@@ -60,15 +66,27 @@ function showRecall(action: () => void): void {
   action()
 }
 
+function saveContent(payload: ProblemContentUpdate): void {
+  void store.saveEdit(payload)
+}
+
+// 编辑态必须挂起全部快捷键：焦点不在输入框时，←/→ 会切题、Esc 会结束复习，都会丢弃未保存内容。
+function whenNotEditing(action: () => void): () => void {
+  return () => {
+    if (editing.value) return
+    action()
+  }
+}
+
 useReviewShortcuts({
-  onForgot: () => submit('FORGOT'),
-  onFuzzy: () => submit('FUZZY'),
-  onKnown: () => submit('KNOWN'),
-  onToggleHint: () => showRecall(store.toggleHint),
-  onToggleAnswer: () => showRecall(store.toggleAnswer),
-  onNext: () => void store.move(1),
-  onPrevious: () => void store.move(-1),
-  onEnd: () => void store.endReview(),
+  onForgot: whenNotEditing(() => submit('FORGOT')),
+  onFuzzy: whenNotEditing(() => submit('FUZZY')),
+  onKnown: whenNotEditing(() => submit('KNOWN')),
+  onToggleHint: whenNotEditing(() => showRecall(store.toggleHint)),
+  onToggleAnswer: whenNotEditing(() => showRecall(store.toggleAnswer)),
+  onNext: whenNotEditing(() => void store.move(1)),
+  onPrevious: whenNotEditing(() => void store.move(-1)),
+  onEnd: whenNotEditing(() => void store.endReview()),
 })
 </script>
 
@@ -101,96 +119,118 @@ useReviewShortcuts({
               :tags="currentProblem.tags"
             />
 
-            <nav class="study-tabs" role="tablist" aria-label="题目学习内容">
-              <button
-                id="tab-description"
-                type="button"
-                role="tab"
-                :aria-selected="activeTab === 'description'"
-                aria-controls="panel-description"
-                :tabindex="activeTab === 'description' ? 0 : -1"
-                :class="{ active: activeTab === 'description' }"
-                @click="activeTab = 'description'"
-              >
-                <FileText :size="16" />题目描述
-              </button>
-              <button
-                id="tab-recall"
-                type="button"
-                role="tab"
-                :aria-selected="activeTab === 'recall'"
-                aria-controls="panel-recall"
-                :tabindex="activeTab === 'recall' ? 0 : -1"
-                :class="{ active: activeTab === 'recall' }"
-                @click="activeTab = 'recall'"
-              >
-                <BrainCircuit :size="16" />回忆复习
-              </button>
-              <button
-                id="tab-notes"
-                type="button"
-                role="tab"
-                :aria-selected="activeTab === 'notes'"
-                aria-controls="panel-notes"
-                :tabindex="activeTab === 'notes' ? 0 : -1"
-                :class="{ active: activeTab === 'notes' }"
-                @click="activeTab = 'notes'"
-              >
-                <NotebookPen :size="16" />我的笔记
-              </button>
-            </nav>
-
-            <div
-              v-show="activeTab === 'description'"
-              id="panel-description"
-              class="study-panel"
-              role="tabpanel"
-              aria-labelledby="tab-description"
-              tabindex="0"
-            >
-              <ProblemDescription :markdown="currentProblem.descriptionMarkdown" />
-            </div>
-
-            <div
-              v-show="activeTab === 'recall'"
-              id="panel-recall"
-              class="study-panel recall-panel"
-              role="tabpanel"
-              aria-labelledby="tab-recall"
-              tabindex="0"
-            >
-              <RecallQuestionList
-                :questions="currentProblem.recallQuestions"
-                :draft="currentDraft"
-                :answers-visible="answerVisible"
-                @update="store.updateDraft"
+            <template v-if="editing">
+              <LoadingState v-if="editLoading" />
+              <ErrorState
+                v-else-if="!editContent"
+                :message="editError || '读取题目内容失败'"
+                @retry="store.enterEdit"
               />
-              <HintPanel
-                :visible="hintVisible"
-                :hint="currentProblem.hint"
-                @toggle="store.toggleHint"
+              <ProblemContentEditor
+                v-else
+                :content="editContent"
+                :saving="editSaving"
+                :error-message="editError"
+                @save="saveContent"
+                @cancel="store.cancelEdit"
               />
-              <AnswerPanel
-                :visible="answerVisible"
-                :core-idea="currentProblem.coreIdea"
-                :mistakes="currentProblem.mistakes"
-                :key-code="currentProblem.keyCode"
-                @toggle="store.toggleAnswer"
-              />
-            </div>
+            </template>
 
-            <div
-              v-show="activeTab === 'notes'"
-              id="panel-notes"
-              class="study-panel notes-panel"
-              role="tabpanel"
-              aria-labelledby="tab-notes"
-              tabindex="0"
-            >
-              <ProblemNotePanel :problem-id="currentProblem.problemId" />
-            </div>
+            <template v-else>
+              <nav class="study-tabs" role="tablist" aria-label="题目学习内容">
+                <button
+                  id="tab-description"
+                  type="button"
+                  role="tab"
+                  :aria-selected="activeTab === 'description'"
+                  aria-controls="panel-description"
+                  :tabindex="activeTab === 'description' ? 0 : -1"
+                  :class="{ active: activeTab === 'description' }"
+                  @click="activeTab = 'description'"
+                >
+                  <FileText :size="16" />题目描述
+                </button>
+                <button
+                  id="tab-recall"
+                  type="button"
+                  role="tab"
+                  :aria-selected="activeTab === 'recall'"
+                  aria-controls="panel-recall"
+                  :tabindex="activeTab === 'recall' ? 0 : -1"
+                  :class="{ active: activeTab === 'recall' }"
+                  @click="activeTab = 'recall'"
+                >
+                  <BrainCircuit :size="16" />回忆复习
+                </button>
+                <button
+                  id="tab-notes"
+                  type="button"
+                  role="tab"
+                  :aria-selected="activeTab === 'notes'"
+                  aria-controls="panel-notes"
+                  :tabindex="activeTab === 'notes' ? 0 : -1"
+                  :class="{ active: activeTab === 'notes' }"
+                  @click="activeTab = 'notes'"
+                >
+                  <NotebookPen :size="16" />我的笔记
+                </button>
+                <button class="edit-entry" type="button" @click="store.enterEdit">
+                  <SquarePen :size="15" />编辑
+                </button>
+              </nav>
+
+              <div
+                v-show="activeTab === 'description'"
+                id="panel-description"
+                class="study-panel"
+                role="tabpanel"
+                aria-labelledby="tab-description"
+                tabindex="0"
+              >
+                <ProblemDescription :markdown="currentProblem.descriptionMarkdown" />
+              </div>
+
+              <div
+                v-show="activeTab === 'recall'"
+                id="panel-recall"
+                class="study-panel recall-panel"
+                role="tabpanel"
+                aria-labelledby="tab-recall"
+                tabindex="0"
+              >
+                <RecallQuestionList
+                  :questions="currentProblem.recallQuestions"
+                  :draft="currentDraft"
+                  :answers-visible="answerVisible"
+                  @update="store.updateDraft"
+                />
+                <HintPanel
+                  :visible="hintVisible"
+                  :hint="currentProblem.hint"
+                  @toggle="store.toggleHint"
+                />
+                <AnswerPanel
+                  :visible="answerVisible"
+                  :core-idea="currentProblem.coreIdea"
+                  :mistakes="currentProblem.mistakes"
+                  :key-code="currentProblem.keyCode"
+                  @toggle="store.toggleAnswer"
+                />
+              </div>
+
+              <div
+                v-show="activeTab === 'notes'"
+                id="panel-notes"
+                class="study-panel notes-panel"
+                role="tabpanel"
+                aria-labelledby="tab-notes"
+                tabindex="0"
+              >
+                <ProblemNotePanel :problem-id="currentProblem.problemId" />
+              </div>
+            </template>
           </div>
-          <ReviewResultButtons :loading="submitting" @select="submit" />
+          <ReviewResultButtons v-if="!editing" :loading="submitting" @select="submit" />
         </template>
       </section>
 
@@ -275,6 +315,22 @@ useReviewShortcuts({
 .study-tabs button.active { color: var(--primary-hover); }
 .study-tabs button.active::after { background: var(--primary); }
 .study-tabs button:focus-visible { z-index: 1; outline: 2px solid var(--primary); outline-offset: -2px; }
+.study-tabs .edit-entry {
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 11px;
+  margin: 4px 0 4px auto;
+  color: var(--text-muted);
+  font-size: 12px;
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+}
+.study-tabs .edit-entry::after { content: none; }
+.study-tabs .edit-entry:hover {
+  color: var(--primary-hover);
+  border-color: var(--primary);
+  background: transparent;
+}
 .study-panel {
   padding-right: 8px;
   outline: none;

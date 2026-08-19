@@ -1,10 +1,13 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { reviewApi } from '@/api/review'
+import { problemContentApi } from '@/api/problemContent'
 import { readActiveProblemId, writeActiveProblemId } from '@/utils/problemSelection'
 import { readStorage, writeStorage } from '@/utils/storage'
 import type {
   MasteryLevel,
+  ProblemContent,
+  ProblemContentUpdate,
   ReviewProblemDetail,
   ReviewQueueItem,
   ReviewSubmitResult,
@@ -30,6 +33,12 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
   const submitting = ref(false)
   const error = ref('')
   const saveState = ref<'idle' | 'saved'>('idle')
+
+  const editing = ref(false)
+  const editContent = ref<ProblemContent | null>(null)
+  const editLoading = ref(false)
+  const editSaving = ref(false)
+  const editError = ref('')
 
   const completedCount = computed(() => todayQueue.value.filter((item) => item.completed).length)
   const currentIndex = computed(() => todayQueue.value.findIndex(
@@ -115,6 +124,58 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
     }
   }
 
+  /**
+   * 编辑表单必须走 /content 接口拉全量内容。
+   * 复习详情接口只返回前 4 个标签，用 currentProblem 初始化表单会在保存时静默删除其余标签。
+   */
+  async function enterEdit(): Promise<void> {
+    const problemId = currentProblemId.value
+    if (problemId === null || editing.value) return
+    editing.value = true
+    editLoading.value = true
+    editError.value = ''
+    editContent.value = null
+    try {
+      editContent.value = await problemContentApi.get(problemId)
+    } catch (cause) {
+      editError.value = cause instanceof Error ? cause.message : '读取题目内容失败，请重试'
+    } finally {
+      editLoading.value = false
+    }
+  }
+
+  function cancelEdit(): void {
+    editing.value = false
+    editContent.value = null
+    editError.value = ''
+    editLoading.value = false
+  }
+
+  async function saveEdit(payload: ProblemContentUpdate): Promise<boolean> {
+    const problemId = currentProblemId.value
+    if (problemId === null || editSaving.value) return false
+    editSaving.value = true
+    editError.value = ''
+    try {
+      await problemContentApi.save(problemId, payload)
+      editing.value = false
+      editContent.value = null
+      await loadProblem(problemId)
+      const queueItem = todayQueue.value.find((item) => item.problemId === problemId)
+      if (queueItem && currentProblem.value) {
+        queueItem.title = currentProblem.value.title
+        queueItem.difficulty = currentProblem.value.difficulty
+        queueItem.tags = currentProblem.value.tags
+      }
+      return true
+    } catch (cause) {
+      editError.value = cause instanceof Error ? cause.message : '保存失败，请重试'
+      return false
+    } finally {
+      editSaving.value = false
+    }
+  }
+
   async function openProblem(problemId: number): Promise<void> {
     await loadProblem(problemId)
   }
@@ -143,7 +204,7 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
 
   async function submit(result: Exclude<MasteryLevel, 'NEW'>): Promise<ReviewSubmitResult | null> {
     const problem = currentProblem.value
-    if (!problem || submitting.value) return null
+    if (!problem || submitting.value || editing.value) return null
     submitting.value = true
     try {
       const response = await reviewApi.submit(problem.problemId, {
@@ -178,6 +239,7 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
   }
 
   async function move(delta: -1 | 1): Promise<void> {
+    if (editing.value) return
     if (todayQueue.value.length === 0) return
     const index = currentIndex.value < 0 ? 0 : currentIndex.value
     const nextIndex = (index + delta + todayQueue.value.length) % todayQueue.value.length
@@ -186,6 +248,7 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
   }
 
   async function endReview(): Promise<void> {
+    if (editing.value) return
     const first = todayQueue.value[0]
     if (first) await loadProblem(first.problemId)
   }
@@ -208,6 +271,11 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
     submitting,
     error,
     saveState,
+    editing,
+    editContent,
+    editLoading,
+    editSaving,
+    editError,
     completedCount,
     currentIndex,
     currentDraft,
@@ -221,5 +289,8 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
     submit,
     move,
     endReview,
+    enterEdit,
+    cancelEdit,
+    saveEdit,
   }
 })

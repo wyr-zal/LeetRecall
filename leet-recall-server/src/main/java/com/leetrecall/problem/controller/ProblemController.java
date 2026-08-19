@@ -1,9 +1,12 @@
 package com.leetrecall.problem.controller;
 
 import com.leetrecall.common.response.ApiResponse;
+import com.leetrecall.problem.dto.ProblemContentUpdateDTO;
 import com.leetrecall.problem.dto.ProblemNoteUpdateDTO;
+import com.leetrecall.problem.service.ProblemContentService;
 import com.leetrecall.problem.service.ProblemNoteService;
 import com.leetrecall.problem.service.ProblemService;
+import com.leetrecall.problem.vo.ProblemContentVO;
 import com.leetrecall.problem.vo.ProblemNoteVO;
 import com.leetrecall.problem.vo.ProblemSearchItemVO;
 import jakarta.validation.Valid;
@@ -24,6 +27,7 @@ import java.util.List;
 public class ProblemController {
     private final ProblemService problemService;
     private final ProblemNoteService problemNoteService;
+    private final ProblemContentService problemContentService;
 
     @GetMapping("/search")
     public ApiResponse<List<ProblemSearchItemVO>> search(@RequestParam(defaultValue = "") String keyword) {
@@ -41,5 +45,18 @@ public class ProblemController {
             @Valid @RequestBody ProblemNoteUpdateDTO request
     ) {
         return ApiResponse.success(problemNoteService.save(problemId, request.markdown()));
+    }
+
+    @GetMapping("/{problemId}/content")
+    public ApiResponse<ProblemContentVO> getContent(@PathVariable Long problemId) {
+        return ApiResponse.success(problemContentService.get(problemId));
+    }
+
+    @PutMapping("/{problemId}/content")
+    public ApiResponse<ProblemContentVO> updateContent(
+            @PathVariable Long problemId,
+            @Valid @RequestBody ProblemContentUpdateDTO request
+    ) {
+        return ApiResponse.success(problemContentService.update(problemId, request));
     }
 }
