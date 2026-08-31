@@ -5,6 +5,8 @@ import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import 'monaco-editor/esm/vs/basic-languages/java/java.contribution'
 import { Copy, Maximize2, Minus, Plus } from 'lucide-vue-next'
 import type { DictationResultItem } from '@/types/dictation'
+import type { CodeAnnotationAnchor, ResolvedCodeAnnotation } from '@/types/annotation'
+import { renderMarkdown } from '@/utils/markdown'
 
 interface MonacoEnvironmentConfig {
   getWorker: () => Worker
@@ -18,8 +20,14 @@ const props = defineProps<{
   answers: Record<string, string>
   results?: DictationResultItem[]
   answerCode?: string
+  annotations?: ResolvedCodeAnnotation[]
+  activeAnnotationId?: number | null
 }>()
-const emit = defineEmits<{ 'update:answers': [answers: Record<string, string>] }>()
+const emit = defineEmits<{
+  'update:answers': [answers: Record<string, string>]
+  'create-annotation': [anchor: CodeAnnotationAnchor]
+  'select-annotation': [annotationId: number]
+}>()
 
 const shellRef = ref<HTMLElement | null>(null)
 const editorRef = ref<HTMLElement | null>(null)
@@ -30,6 +38,11 @@ let editor: monaco.editor.IStandaloneCodeEditor | null = null
 let resizeObserver: ResizeObserver | null = null
 let widgets: monaco.editor.IContentWidget[] = []
 let widgetInputs = new Map<string, HTMLInputElement>()
+let annotationDecorations: monaco.editor.IEditorDecorationsCollection | null = null
+let selectionAction: monaco.editor.IContentWidget | null = null
+let pendingSelection: CodeAnnotationAnchor | null = null
+let annotationCard: monaco.editor.IContentWidget | null = null
+let editorDisposables: monaco.IDisposable[] = []
 
 const resultMap = computed(() => new Map(props.results?.map((item) => [item.blankKey, item])))
 
@@ -112,13 +125,27 @@ onMounted(() => {
     hover: { enabled: false },
     codeLens: false,
     lightbulb: { enabled: monaco.editor.ShowLightbulbIconMode.Off },
-    folding: false,
-    renderLineHighlight: 'line',
+    glyphMargin: Boolean(props.answerCode),
+    showFoldingControls: 'never',
     overviewRulerBorder: false,
     hideCursorInOverviewRuler: true,
     scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 },
   })
   renderModel()
+  editorDisposables = [
+    editor.onDidChangeCursorSelection(() => updateSelectionAction()),
+    editor.onMouseDown((event) => {
+      const target = event.target
+      if (target.type !== monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) return
+      const className = target.element?.className ?? ''
+      const match = className.match(/code-annotation-glyph-(\d+)/)
+      const annotationId = Number(match?.[1])
+      if (Number.isInteger(annotationId) && annotationId > 0) {
+        emit('select-annotation', annotationId)
+        showAnnotationCard(annotationId)
+      }
+    }),
+  ]
   resizeObserver = new ResizeObserver(() => editor?.layout())
   resizeObserver.observe(editorRef.value)
   document.addEventListener('fullscreenchange', handleFullscreenChange)
@@ -152,6 +179,8 @@ function updateEditorTheme(): void {
 
 onBeforeUnmount(() => {
   disposeWidgets()
+  editorDisposables.forEach((disposable) => disposable.dispose())
+  editorDisposables = []
   resizeObserver?.disconnect()
   editor?.dispose()
   document.removeEventListener('fullscreenchange', handleFullscreenChange)
@@ -160,6 +189,15 @@ onBeforeUnmount(() => {
 
 watch(() => [props.templateCode, props.answerCode], () => {
   if (editor) renderModel()
+})
+
+watch(() => props.annotations, () => {
+  if (editor && props.answerCode) applyAnnotationDecorations()
+}, { deep: true })
+
+watch(() => props.activeAnnotationId, (annotationId) => {
+  if (annotationId) showAnnotationCard(annotationId)
+  else removeAnnotationCard()
 })
 
 watch(() => props.answers, (answers) => {
@@ -176,12 +214,17 @@ watch(resultMap, applyResultStyles)
 function renderModel(): void {
   if (!editor) return
   disposeWidgets()
+  annotationDecorations?.clear()
+  annotationDecorations = null
+  removeSelectionAction()
+  removeAnnotationCard()
   if (props.answerCode) {
     editor.setValue(props.answerCode)
-    editor.updateOptions({ readOnly: true })
+    editor.updateOptions({ readOnly: true, glyphMargin: true })
+    applyAnnotationDecorations()
     return
   }
-  editor.updateOptions({ readOnly: true })
+  editor.updateOptions({ readOnly: true, glyphMargin: false })
   const tokenRegex = /{{(blank_\d+)}}/g
   const placeholders: Array<{ key: string; offset: number }> = []
   let output = ''
@@ -208,6 +251,127 @@ function renderModel(): void {
     applyResultStyles()
     for (const input of widgetInputs.values()) fitInputWidth(input)
   })
+}
+
+function applyAnnotationDecorations(): void {
+  if (!editor || !props.answerCode) return
+  const model = editor.getModel()
+  if (!model) return
+  const decorations: monaco.editor.IModelDeltaDecoration[] = []
+  for (const annotation of props.annotations ?? []) {
+    if (!annotation.resolved) continue
+    const range = new monaco.Range(
+      annotation.startLine,
+      annotation.startColumn,
+      annotation.endLine,
+      annotation.endColumn,
+    )
+    decorations.push({
+      range,
+      options: {
+        inlineClassName: 'code-annotation-range',
+        glyphMarginClassName: `code-annotation-glyph code-annotation-glyph-${annotation.id}`,
+        glyphMarginHoverMessage: { value: annotation.label || '代码批注' },
+        hoverMessage: { value: annotation.label || '代码批注' },
+      },
+    })
+  }
+  annotationDecorations ??= editor.createDecorationsCollection()
+  annotationDecorations.set(decorations)
+}
+
+function removeSelectionAction(): void {
+  if (editor && selectionAction) editor.removeContentWidget(selectionAction)
+  selectionAction = null
+  pendingSelection = null
+}
+
+function removeAnnotationCard(): void {
+  if (editor && annotationCard) editor.removeContentWidget(annotationCard)
+  annotationCard = null
+}
+
+function showAnnotationCard(annotationId: number): void {
+  if (!editor || !props.answerCode) return
+  const annotation = (props.annotations ?? []).find((item) => item.id === annotationId && item.resolved)
+  if (!annotation) return
+  removeAnnotationCard()
+  const node = document.createElement('aside')
+  node.className = 'annotation-floating-card'
+  const title = document.createElement('strong')
+  title.textContent = annotation.label || '未命名批注'
+  const code = document.createElement('code')
+  code.textContent = annotation.anchorText
+  const body = document.createElement('div')
+  body.className = 'annotation-floating-content'
+  body.innerHTML = renderMarkdown(annotation.contentMarkdown)
+  node.append(title, code, body)
+  annotationCard = {
+    getId: () => 'code-annotation-floating-card',
+    getDomNode: () => node,
+    getPosition: () => ({
+      position: new monaco.Position(annotation.startLine, annotation.endColumn),
+      preference: [monaco.editor.ContentWidgetPositionPreference.BELOW],
+    }),
+  }
+  editor.addContentWidget(annotationCard)
+}
+
+function updateSelectionAction(): void {
+  if (!editor || !props.answerCode) {
+    removeSelectionAction()
+    return
+  }
+  const selection = editor.getSelection()
+  const model = editor.getModel()
+  if (!selection || selection.isEmpty() || !model) {
+    removeSelectionAction()
+    return
+  }
+  const selectedText = model.getValueInRange(selection)
+  if (!selectedText.trim() || selectedText.length > 500) {
+    removeSelectionAction()
+    return
+  }
+  removeSelectionAction()
+  const occurrenceIndex = countOccurrences(model.getValue(), selectedText, model.getOffsetAt(selection.getStartPosition()))
+  pendingSelection = {
+    anchorText: selectedText,
+    occurrenceIndex,
+    startLine: selection.startLineNumber,
+    startColumn: selection.startColumn,
+    endLine: selection.endLineNumber,
+    endColumn: selection.endColumn,
+  }
+  const node = document.createElement('button')
+  node.type = 'button'
+  node.className = 'annotation-selection-action'
+  node.textContent = '＋批注'
+  node.addEventListener('mousedown', (event) => event.preventDefault())
+  node.addEventListener('click', () => {
+    if (pendingSelection) emit('create-annotation', pendingSelection)
+    removeSelectionAction()
+  })
+  selectionAction = {
+    getId: () => 'code-annotation-selection-action',
+    getDomNode: () => node,
+    getPosition: () => ({
+      position: selection.getEndPosition(),
+      preference: [monaco.editor.ContentWidgetPositionPreference.BELOW],
+    }),
+  }
+  editor.addContentWidget(selectionAction)
+}
+
+function countOccurrences(code: string, text: string, offset: number): number {
+  let occurrenceIndex = 0
+  let from = 0
+  while (true) {
+    const found = code.indexOf(text, from)
+    if (found < 0 || found >= offset) return occurrenceIndex
+    occurrenceIndex += 1
+    from = found + Math.max(text.length, 1)
+  }
 }
 
 function createWidget(key: string, position: monaco.Position): monaco.editor.IContentWidget {
@@ -326,6 +490,53 @@ function handleFullscreenChange(): void {
 .editor { height: 470px; }
 :deep(.dictation-blank-widget) {
   transform: translateY(-2px);
+}
+:deep(.code-annotation-range) {
+  text-decoration: underline wavy var(--primary) 1.5px;
+  text-decoration-skip-ink: none;
+}
+:deep(.code-annotation-glyph) {
+  width: 12px !important;
+  background: var(--primary);
+  border-radius: 50%;
+  transform: scale(.58);
+}
+:deep(.annotation-floating-card) {
+  display: grid;
+  width: min(360px, calc(100vw - 48px));
+  max-height: 280px;
+  gap: 7px;
+  padding: 12px;
+  overflow: auto;
+  color: var(--text-primary);
+  font-size: 12px;
+  border: 1px solid var(--primary);
+  border-radius: 7px;
+  background: var(--bg-card);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .3);
+}
+:deep(.annotation-floating-card code) {
+  padding: 5px 7px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font: 11px/1.5 "JetBrains Mono", Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 4px;
+  background: var(--code-surface);
+}
+:deep(.annotation-floating-content) { color: var(--text-secondary); line-height: 1.65; }
+:deep(.annotation-floating-content > :first-child) { margin-top: 0; }
+:deep(.annotation-floating-content > :last-child) { margin-bottom: 0; }
+:deep(.annotation-floating-content pre) { max-height: 130px; overflow: auto; }
+:deep(.annotation-selection-action) {
+  padding: 4px 8px;
+  color: var(--text-primary);
+  font-size: 11px;
+  border: 1px solid var(--primary);
+  border-radius: 5px;
+  background: var(--bg-card);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .28);
 }
 :deep(.dictation-blank-widget input) {
   width: 112px;

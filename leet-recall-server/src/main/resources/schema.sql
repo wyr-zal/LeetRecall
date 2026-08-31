@@ -138,6 +138,23 @@ CREATE TABLE IF NOT EXISTS problem_note (
     CONSTRAINT fk_problem_note_problem FOREIGN KEY (problem_id) REFERENCES problem (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE IF NOT EXISTS problem_code_annotation (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    problem_id BIGINT NOT NULL,
+    anchor_text VARCHAR(1000) NOT NULL,
+    occurrence_index INT NOT NULL DEFAULT 0,
+    start_line INT NOT NULL,
+    start_column INT NOT NULL,
+    end_line INT NOT NULL,
+    end_column INT NOT NULL,
+    label VARCHAR(60),
+    content_markdown MEDIUMTEXT NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    KEY idx_problem_code_annotation_problem (problem_id, start_line, start_column),
+    CONSTRAINT fk_problem_code_annotation_problem FOREIGN KEY (problem_id) REFERENCES problem (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE IF NOT EXISTS external_import_draft (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     leetcode_number INT NULL,

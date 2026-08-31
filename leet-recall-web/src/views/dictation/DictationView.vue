@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { defineAsyncComponent, onActivated, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onActivated, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { dictationApi } from '@/api/dictation'
 import { useDictationStore } from '@/stores/dictation'
@@ -9,6 +9,7 @@ import DictationActions from '@/components/dictation/DictationActions.vue'
 import CompletionRing from '@/components/dictation/CompletionRing.vue'
 import KeywordPanel from '@/components/dictation/KeywordPanel.vue'
 import MistakePanel from '@/components/dictation/MistakePanel.vue'
+import AnnotationPanel from '@/components/dictation/AnnotationPanel.vue'
 import DictationHistory from '@/components/dictation/DictationHistory.vue'
 import RecordDetailDialog from '@/components/dictation/RecordDetailDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -16,6 +17,8 @@ import LoadingState from '@/components/common/LoadingState.vue'
 import ErrorState from '@/components/common/ErrorState.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import type { DictationRecordDetail } from '@/types/dictation'
+import type { CodeAnnotationAnchor, CodeAnnotationInput, ResolvedCodeAnnotation } from '@/types/annotation'
+import { useCodeAnnotationStore } from '@/stores/codeAnnotation'
 
 const CodeBlankEditor = defineAsyncComponent({
   loader: () => import('@/components/dictation/CodeBlankEditor.vue'),
@@ -24,6 +27,7 @@ const CodeBlankEditor = defineAsyncComponent({
 })
 
 const store = useDictationStore()
+const annotationStore = useCodeAnnotationStore()
 const {
   todayQueue,
   currentProblem,
@@ -40,11 +44,35 @@ const {
   error,
   currentIndex,
 } = storeToRefs(store)
+const {
+  resolvedAnnotations,
+  loading: annotationLoading,
+  saving: annotationSaving,
+  error: annotationError,
+} = storeToRefs(annotationStore)
 const resetOpen = ref(false)
 const recordDetail = ref<DictationRecordDetail | null>(null)
+const selectedAnnotationId = ref<number | null>(null)
+const deleteAnnotationId = ref<number | null>(null)
+const draftAnnotationAnchor = ref<CodeAnnotationAnchor | null>(null)
+const visibleAnnotations = computed(() => answerVisible.value ? resolvedAnnotations.value : resolvedAnnotations.value.map((annotation) => ({
+  ...annotation,
+  resolved: true,
+})))
 let firstActivation = true
 
 onMounted(() => store.loadQueue())
+watch(currentProblem, (problem) => {
+  draftAnnotationAnchor.value = null
+  selectedAnnotationId.value = null
+  if (problem) {
+    annotationStore.setCode(revealedAnswer.value?.fullCode ?? '')
+    void annotationStore.load(problem.problemId, revealedAnswer.value?.fullCode ?? '')
+  }
+}, { immediate: true })
+watch(revealedAnswer, (answer) => {
+  annotationStore.setCode(answer?.fullCode ?? '')
+})
 onActivated(() => {
   if (firstActivation) {
     firstActivation = false
@@ -56,6 +84,47 @@ onActivated(() => {
 function confirmReset(): void {
   store.reset()
   resetOpen.value = false
+}
+
+function openAnnotationDraft(anchor: CodeAnnotationAnchor): void {
+  draftAnnotationAnchor.value = anchor
+}
+
+function cancelAnnotationDraft(): void {
+  draftAnnotationAnchor.value = null
+}
+
+async function saveNewAnnotation(input: CodeAnnotationInput): Promise<void> {
+  const created = await annotationStore.create(input)
+  if (created) draftAnnotationAnchor.value = null
+}
+
+async function saveAnnotation(id: number, input: CodeAnnotationInput): Promise<void> {
+  await annotationStore.update(id, input)
+}
+
+function requestDeleteAnnotation(id: number): void {
+  deleteAnnotationId.value = id
+}
+
+async function confirmDeleteAnnotation(): Promise<void> {
+  if (deleteAnnotationId.value === null) return
+  const deleted = await annotationStore.remove(deleteAnnotationId.value)
+  if (!deleted) return
+  if (!annotationStore.annotations.some((item) => item.id === selectedAnnotationId.value)) {
+    selectedAnnotationId.value = null
+  }
+  deleteAnnotationId.value = null
+}
+
+function selectAnnotation(annotation: ResolvedCodeAnnotation): void {
+  if (!annotation.resolved) return
+  selectedAnnotationId.value = annotation.id
+}
+
+function selectAnnotationById(annotationId: number): void {
+  const annotation = resolvedAnnotations.value.find((item) => item.id === annotationId)
+  if (annotation) selectAnnotation(annotation)
 }
 
 async function openRecord(recordId: number): Promise<void> {
@@ -98,7 +167,11 @@ async function openRecord(recordId: number): Promise<void> {
               :answers="currentAnswers"
               :results="submitResult?.resultItems"
               :answer-code="answerVisible ? revealedAnswer?.fullCode : undefined"
+              :annotations="visibleAnnotations"
+              :active-annotation-id="selectedAnnotationId"
               @update:answers="store.updateAnswers"
+              @create-annotation="openAnnotationDraft"
+              @select-annotation="selectAnnotationById"
             />
             <div v-if="submitResult" class="score-message" role="status">
               <strong>{{ Math.round(submitResult.accuracy) }}%</strong>
@@ -120,11 +193,32 @@ async function openRecord(recordId: number): Promise<void> {
           <CompletionRing :accuracy="currentAccuracy" />
           <KeywordPanel :keywords="currentProblem.keywords" />
           <MistakePanel :mistakes="currentProblem.mistakes" />
+          <AnnotationPanel
+            :annotations="visibleAnnotations"
+            :loading="annotationLoading"
+            :saving="annotationSaving"
+            :error="annotationError"
+            :draft-anchor="draftAnnotationAnchor"
+            :can-create="answerVisible"
+            @cancel-create="cancelAnnotationDraft"
+            @save-new="saveNewAnnotation"
+            @save="saveAnnotation"
+            @delete="requestDeleteAnnotation"
+            @select="selectAnnotation"
+          />
         </aside>
       </div>
       <DictationHistory class="history" :records="history" @select="openRecord" />
     </template>
 
+    <ConfirmDialog
+      :open="deleteAnnotationId !== null"
+      title="删除代码批注"
+      description="确定删除这条代码批注吗？删除后无法恢复。"
+      confirm-label="删除批注"
+      @confirm="confirmDeleteAnnotation"
+      @cancel="deleteAnnotationId = null"
+    />
     <ConfirmDialog
       :open="resetOpen"
       title="重置当前默写"
