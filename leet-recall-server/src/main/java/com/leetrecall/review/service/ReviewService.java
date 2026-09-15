@@ -5,6 +5,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leetrecall.common.enums.MasteryLevel;
 import com.leetrecall.common.exception.ErrorCode;
+import com.leetrecall.externalimport.entity.ExternalImportDraft;
+import com.leetrecall.externalimport.mapper.ExternalImportDraftMapper;
 import com.leetrecall.problem.entity.Problem;
 import com.leetrecall.problem.entity.ProblemMistake;
 import com.leetrecall.problem.entity.RecallQuestion;
@@ -12,6 +14,7 @@ import com.leetrecall.problem.mapper.ProblemMapper;
 import com.leetrecall.problem.mapper.ProblemMistakeMapper;
 import com.leetrecall.problem.mapper.ProblemTagMapper;
 import com.leetrecall.problem.mapper.RecallQuestionMapper;
+import com.leetrecall.problem.vo.ProblemLastActivityVO;
 import com.leetrecall.problem.vo.ProblemTagNameVO;
 import com.leetrecall.review.dto.ReviewSubmitDTO;
 import com.leetrecall.review.entity.ProblemProgress;
@@ -21,6 +24,7 @@ import com.leetrecall.review.mapper.ReviewRecordMapper;
 import com.leetrecall.review.vo.RecallQuestionVO;
 import com.leetrecall.review.vo.ReviewProblemDetailVO;
 import com.leetrecall.review.vo.ReviewQueueItemVO;
+import com.leetrecall.review.vo.ReviewQueueRow;
 import com.leetrecall.review.vo.ReviewSubmitVO;
 import com.leetrecall.review.vo.TodayReviewQueueVO;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +48,7 @@ public class ReviewService {
     private final ProblemMistakeMapper problemMistakeMapper;
     private final ProblemProgressMapper problemProgressMapper;
     private final ReviewRecordMapper reviewRecordMapper;
+    private final ExternalImportDraftMapper externalImportDraftMapper;
     private final ReviewScheduler reviewScheduler;
     private final ObjectMapper objectMapper;
     private final Clock applicationClock;
@@ -53,24 +58,34 @@ public class ReviewService {
         LocalDateTime dayStart = today.atStartOfDay();
         LocalDateTime dayEnd = today.plusDays(1).atStartOfDay();
         var rows = problemMapper.selectTodayReviewRows(dayStart, dayEnd);
-        Map<Long, List<String>> tagsByProblem = rows.isEmpty()
+        List<Long> problemIds = rows.stream().map(ReviewQueueRow::getProblemId).toList();
+        Map<Long, List<String>> tagsByProblem = problemIds.isEmpty()
                 ? Map.of()
-                : problemTagMapper.selectTagNamesByProblemIds(rows.stream().map(row -> row.getProblemId()).toList()).stream()
+                : problemTagMapper.selectTagNamesByProblemIds(problemIds).stream()
                 .collect(Collectors.groupingBy(
                         ProblemTagNameVO::getProblemId,
                         Collectors.mapping(ProblemTagNameVO::getName, Collectors.toList())
                 ));
+        Map<Long, ProblemLastActivityVO> activityByProblem = problemIds.isEmpty()
+                ? Map.of()
+                : problemMapper.selectLastActivityByProblemIds(problemIds).stream()
+                .collect(Collectors.toMap(ProblemLastActivityVO::getProblemId, activity -> activity));
         List<ReviewQueueItemVO> items = rows.stream()
-                .map(row -> new ReviewQueueItemVO(
-                        row.getProblemId(),
-                        row.getLeetcodeNumber(),
-                        row.getTitle(),
-                        row.getDifficulty(),
-                        tagsByProblem.getOrDefault(row.getProblemId(), List.of()).stream().limit(4).toList(),
-                        row.getMasteryLevel(),
-                        Boolean.TRUE.equals(row.getCompleted()),
-                        row.getTodayResult()
-                ))
+                .map(row -> {
+                    ProblemLastActivityVO activity = activityByProblem.get(row.getProblemId());
+                    return new ReviewQueueItemVO(
+                            row.getProblemId(),
+                            row.getLeetcodeNumber(),
+                            row.getTitle(),
+                            row.getDifficulty(),
+                            tagsByProblem.getOrDefault(row.getProblemId(), List.of()).stream().limit(4).toList(),
+                            row.getMasteryLevel(),
+                            Boolean.TRUE.equals(row.getCompleted()),
+                            row.getTodayResult(),
+                            activity == null ? null : activity.getLastActivityAt(),
+                            activity == null ? null : activity.getContentUpdatedAt()
+                    );
+                })
                 .toList();
         int completed = (int) items.stream().filter(ReviewQueueItemVO::completed).count();
         return new TodayReviewQueueVO(items.size(), completed, items);
@@ -126,7 +141,13 @@ public class ReviewService {
                 problem.getHint(),
                 problem.getCoreIdea(),
                 mistakes,
-                problem.getKeyCode()
+                problem.getKeyCode(),
+                problem.getUpdatedAt(),
+                externalImportDraftMapper.exists(
+                        new LambdaQueryWrapper<ExternalImportDraft>()
+                                .eq(ExternalImportDraft::getPublishedProblemId, problemId)
+                                .eq(ExternalImportDraft::getStatus, "IMPORTED")
+                )
         );
     }
 

@@ -19,15 +19,15 @@ LeetRecall **不会调用 AI**。你负责用任意外部 AI 生成学习资料�
 | `leetcodeNumber` | number | 必须与所选 Hot100 题号一致 |
 | `title` | string | 必须与所选题目标题一致 |
 | `difficulty` | string | `EASY` / `MEDIUM` / `HARD`，与所选题目一致 |
-| `descriptionMarkdown` | string | 非空、可正常渲染的 Markdown 题面；正文及标题/段落/列表/引用/示例/分隔线/来源链接均可调整，代码围栏必须成对闭合 |
-| `noteMarkdown` | string | **可选**。这道题的个人复习笔记，Markdown 格式，最多 100000 字，代码围栏必须成对闭合；缺省或留空则不写入笔记 |
+| `descriptionMarkdown` | string | 题目描述：只放题干、示例和约束；解法思路、推导过程、代码讲解不要放题面，写给 `noteMarkdown`。非空、可正常渲染，正文及标题/段落/列表/引用/示例/分隔线/来源链接均可调整，代码围栏必须成对闭合 |
+| `noteMarkdown` | string | **可选**。这道题的个人复习笔记——题解推导、主解法讲解、模板套路、复杂度和延伸变体都放这里；Markdown 格式，最多 100000 字，代码围栏必须成对闭合；缺省或留空则不写入笔记 |
 | `tags` | string[] | 建议 1～10 个；单个标签最多 50 字 |
 | `coreIdea` | string | 本题状态/不变量、关键操作与正确性理由，不能写跨题套话 |
 | `hint` | string | 行动提示；建议简洁，不按文字长度阻断 |
 | `mistakes` | string[] | 建议 2～4 条真实易错点；每条最多 500 字 |
 | `fullCode` | string | 完整可编译 Java 代码；必须保留官方类名与方法签名，不含 `package`、`native` |
 | `keyCode` | string | 非空关键代码；不要求与 `fullCode` 逐字符匹配 |
-| `recallQuestions` | object[] | 至少 1 组，每组含非空 `question` 和 `answer`；建议生成 3～5 组专属问答，问题最多 500 字 |
+| `recallQuestions` | object[] | 1～5 组（超过 5 组会阻止导入），每组含非空 `question` 和 `answer`；建议生成 3～5 组专属问答，问题最多 500 字 |
 | `dictation.language` | string | 固定为 `JAVA` |
 | `dictation.templateCode` | string | 至少含 1 个唯一 `{{blank_n}}` 的完整代码模板 |
 | `dictation.answers` | object | 键集合与模板空位完全一致；每个值为非空 Java 片段 |
@@ -72,10 +72,10 @@ LeetRecall **不会调用 AI**。你负责用任意外部 AI 生成学习资料�
 ## 必要校验（失败时不能导入，但草稿可继续编辑）
 
 - 只接受一个 JSON 对象；JSON 外的 Markdown 代码围栏、说明文字或多余 JSON 值会明确报出位置。额外字段不会阻断，保存草稿时自动丢弃。
-- 题号、标题、难度必须与所选 Hot100 任务包一致。题面只要求非空且能正常渲染；允许精简正文、调整段落和列表、删除分隔线或来源链接。代码围栏未闭合会阻止导入，并明确提示起始行号。
+- 题号、标题、难度必须与所选 Hot100 任务包一致。题面只放题干、示例和约束，解法讲解写给 `noteMarkdown`；只要求非空且能正常渲染，允许精简正文、调整段落和列表、删除分隔线或来源链接。代码围栏未闭合会阻止导入，并明确提示起始行号。
 - 会写入定长数据库列的内容不得超限：单个标签/关键词 50 字、单条易错点或回忆问题 500 字。
 - `noteMarkdown` 缺省或留空不会阻断导入；写了内容则按 100000 字上限和代码围栏闭合校验，未闭合会提示起始行号。
-- `recallQuestions` 至少 1 组，每组必须有非空问题和答案；重复、套话、答案长短等内容质量不阻断。
+- `recallQuestions` 为 1～5 组，每组必须有非空问题和答案，超过 5 组会阻止导入；重复、套话、答案长短等内容质量不阻断。
 - `fullCode` 保留官方类名、`public` 方法与构造器签名，不含 `package`、`native`，并通过 Java 21 编译。
 - `keyCode` 只要求非空；是否为最佳关键片段由用户和外部 AI 决定。
 - `dictation` 至少有 1 个唯一 `{{blank_n}}`，`answers` 键集合与空位完全一致且答案非空。

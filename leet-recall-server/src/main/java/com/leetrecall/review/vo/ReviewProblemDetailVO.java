@@ -2,6 +2,7 @@ package com.leetrecall.review.vo;
 
 import com.leetrecall.common.enums.Difficulty;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 public record ReviewProblemDetailVO(
@@ -15,6 +16,8 @@ public record ReviewProblemDetailVO(
         String hint,
         String coreIdea,
         List<String> mistakes,
-        String keyCode
+        String keyCode,
+        LocalDateTime updatedAt,
+        boolean externalImported
 ) {
 }

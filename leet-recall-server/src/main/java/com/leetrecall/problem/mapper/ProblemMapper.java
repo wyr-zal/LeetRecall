@@ -2,6 +2,7 @@ package com.leetrecall.problem.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.leetrecall.problem.entity.Problem;
+import com.leetrecall.problem.vo.ProblemLastActivityVO;
 import com.leetrecall.problem.vo.ProblemSearchItemVO;
 import com.leetrecall.review.vo.ReviewQueueRow;
 import org.apache.ibatis.annotations.Param;
@@ -48,6 +49,54 @@ public interface ProblemMapper extends BaseMapper<Problem> {
     List<ReviewQueueRow> selectTodayReviewRows(
             @Param("dayStart") LocalDateTime dayStart,
             @Param("dayEnd") LocalDateTime dayEnd
+    );
+
+    /**
+     * 题目的最近一次"复习痕迹"时间：回忆答案、笔记、默写提交、代码批注四者取最晚。
+     * 回忆答案必须非空白才算，只点了会/不会但没写字的提交不计入。
+     * 四个来源全空时返回 NULL，由调用方按"未复习"处理。
+     *
+     * <p>同时返回"内容更新痕迹"时间 content_updated_at：只有存在外部导入记录的题目才取
+     * problem.updated_at，其余返回 NULL。这样可以排除 V5～V8 批量种子迁移写入的 updated_at
+     * （那批题目全是同一秒，并非用户动作），避免整库题目都被误判成已更新。</p>
+     */
+    @Select("""
+            <script>
+            SELECT p.id AS problem_id,
+                   NULLIF(GREATEST(
+                       COALESCE((
+                           SELECT MAX(rr.reviewed_at)
+                           FROM review_record rr,
+                                JSON_TABLE(COALESCE(rr.user_recall_json, JSON_ARRAY()), '$[*]'
+                                    COLUMNS (answer TEXT PATH '$.answer')) recall
+                           WHERE rr.problem_id = p.id
+                             AND TRIM(COALESCE(recall.answer, '')) != ''
+                       ), CAST('1000-01-01' AS DATETIME)),
+                       COALESCE((
+                           SELECT pn.updated_at FROM problem_note pn WHERE pn.problem_id = p.id
+                       ), CAST('1000-01-01' AS DATETIME)),
+                       COALESCE((
+                           SELECT MAX(dr.created_at) FROM dictation_record dr WHERE dr.problem_id = p.id
+                       ), CAST('1000-01-01' AS DATETIME)),
+                       COALESCE((
+                           SELECT MAX(pca.updated_at)
+                           FROM problem_code_annotation pca WHERE pca.problem_id = p.id
+                       ), CAST('1000-01-01' AS DATETIME))
+                   ), CAST('1000-01-01' AS DATETIME)) AS last_activity_at,
+                   CASE WHEN EXISTS (
+                       SELECT 1 FROM external_import_draft eid
+                       WHERE eid.published_problem_id = p.id
+                         AND eid.status = 'IMPORTED'
+                   ) THEN p.updated_at ELSE NULL END AS content_updated_at
+            FROM problem p
+            WHERE p.id IN
+            <foreach collection='problemIds' item='problemId' open='(' separator=',' close=')'>
+                #{problemId}
+            </foreach>
+            </script>
+            """)
+    List<ProblemLastActivityVO> selectLastActivityByProblemIds(
+            @Param("problemIds") List<Long> problemIds
     );
 
     @Select("""

@@ -2,6 +2,9 @@
 .vscode/
 .DS_Store
 CONTEXT.md
+CLAUDE.md
+.claude/
+NUL
 .env
 .leetrecall-state/
 .omx/

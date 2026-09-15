@@ -326,6 +326,21 @@ class ExternalImportValidatorTest {
                 "class Solution { public int[] twoSum(int[] nums, int target) { } }");
     }
 
+    @Test
+    void rejectsMoreThanFiveRecallQuestions() {
+        Map<String, Object> payload = validPayload();
+        List<Map<String, String>> sixQuestions = new java.util.ArrayList<>();
+        for (int index = 1; index <= 6; index++) {
+            sixQuestions.add(Map.of("question", "第 " + index + " 组问题？", "answer", "第 " + index + " 组答案。"));
+        }
+        payload.put("recallQuestions", sixQuestions);
+
+        var result = validator.validateRaw(write(payload), expected, official);
+
+        assertThat(result.ready()).isFalse();
+        assertThat(result.errors()).anyMatch(error -> error.startsWith("recallQuestions：最多 5 组，当前 6 组"));
+    }
+
     private Map<String, Object> validPayload() {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("leetcodeNumber", 1);

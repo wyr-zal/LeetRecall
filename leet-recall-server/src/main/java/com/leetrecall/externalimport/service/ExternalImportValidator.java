@@ -165,6 +165,9 @@ public class ExternalImportValidator {
             errors.add("recallQuestions：至少需要 1 组问答，否则回忆复习页面没有可展示内容");
             return;
         }
+        if (questions.size() > 5) {
+            errors.add("recallQuestions：最多 5 组，当前 " + questions.size() + " 组；快速复习页编辑保存同样最多支持 5 组");
+        }
         for (int index = 0; index < questions.size(); index++) {
             ExternalImportPayload.RecallQuestion question = questions.get(index);
             int number = index + 1;
