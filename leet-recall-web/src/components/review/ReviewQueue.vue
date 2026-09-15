@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { CircleCheck, CircleDot } from 'lucide-vue-next'
 import type { ReviewQueueItem } from '@/types/problem'
 
@@ -7,21 +7,73 @@ const props = defineProps<{ items: ReviewQueueItem[]; currentProblemId: number |
 defineEmits<{ select: [problemId: number] }>()
 const queueList = ref<HTMLElement | null>(null)
 
-watch(
-  () => props.currentProblemId,
-  async () => {
-    await nextTick()
-    queueList.value
-      ?.querySelector<HTMLElement>('[aria-current="true"]')
-      ?.scrollIntoView({ block: 'nearest' })
-  },
-  { immediate: true },
-)
+function scrollCurrentIntoView(block: ScrollLogicalPosition): void {
+  queueList.value
+    ?.querySelector<HTMLElement>('[aria-current="true"]')
+    ?.scrollIntoView({ block })
+}
+
+/** 点击/切题：目标题通常已在视口内，最小滚动即可（已可见则不动）。 */
+watch(() => props.currentProblemId, async () => {
+  await nextTick()
+  scrollCurrentIntoView('nearest')
+})
+
+/** 列表数据到达（首次渲染或切页回来刷新队列）：当前题滚到列表中部，打开页面即可定位。 */
+watch(() => props.items, async () => {
+  await nextTick()
+  scrollCurrentIntoView('center')
+}, { immediate: true })
 
 function statusClass(item: ReviewQueueItem): string {
   if (!item.completed) return 'pending'
   return item.todayResult?.toLowerCase() ?? 'completed'
 }
+
+function startOfDay(date: Date): number {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+}
+
+function parseTime(value?: string | null): Date | null {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+/** 一周内用相对说法，更早的按日期；跨年补上年份避免误读。 */
+function relativeLabel(date: Date): string {
+  const now = new Date()
+  const days = Math.round((startOfDay(now) - startOfDay(date)) / 86400000)
+  if (days <= 0) return '今天'
+  if (days === 1) return '昨天'
+  if (days < 7) return `${days}天前`
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  if (date.getFullYear() !== now.getFullYear()) return `${date.getFullYear()}-${month}-${day}`
+  return `${month}-${day}`
+}
+
+type QueueStamp = { label: string; iso: string | null; updated: boolean }
+
+/**
+ * 复习痕迹与内容更新痕迹取最晚的一个展示，并标明是哪一类。
+ * 两者同一时刻时算更新——导入会在题目没有笔记时自动写入笔记，
+ * 那条笔记的时间与导入时间完全相同，并不代表真的复习过。
+ * 都没有则是从未碰过的题目。
+ */
+function queueStamp(item: ReviewQueueItem): QueueStamp {
+  const reviewed = parseTime(item.lastReviewedAt)
+  const updated = parseTime(item.contentUpdatedAt)
+  if (updated && (!reviewed || updated >= reviewed)) {
+    return { label: `已更新 ${relativeLabel(updated)}`, iso: item.contentUpdatedAt ?? null, updated: true }
+  }
+  if (reviewed) {
+    return { label: `复习 ${relativeLabel(reviewed)}`, iso: item.lastReviewedAt ?? null, updated: false }
+  }
+  return { label: '未复习', iso: null, updated: false }
+}
+
+const rows = computed(() => props.items.map((item) => ({ item, stamp: queueStamp(item) })))
 </script>
 
 <template>
@@ -32,7 +84,7 @@ function statusClass(item: ReviewQueueItem): string {
     </div>
     <div ref="queueList" class="queue-list" tabindex="0" aria-label="今日复习题目列表">
       <button
-        v-for="item in items"
+        v-for="{ item, stamp } in rows"
         :key="item.problemId"
         type="button"
         :class="[{ current: item.problemId === currentProblemId }, statusClass(item)]"
@@ -42,6 +94,15 @@ function statusClass(item: ReviewQueueItem): string {
         <CircleCheck v-if="item.completed" :size="14" />
         <CircleDot v-else :size="14" />
         <span>{{ item.leetcodeNumber }}. {{ item.title }}</span>
+        <time
+          v-if="stamp.iso"
+          class="queue-time"
+          :class="{ updated: stamp.updated }"
+          :datetime="stamp.iso"
+        >
+          {{ stamp.label }}
+        </time>
+        <span v-else class="queue-time never">{{ stamp.label }}</span>
       </button>
     </div>
   </section>
@@ -78,7 +139,7 @@ h2 { margin: 0; font-size: 15px; font-weight: 650; }
 .queue-list:focus-visible { outline-offset: -2px; }
 button {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
+  grid-template-columns: 16px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   width: 100%;
@@ -92,6 +153,12 @@ button {
   background: transparent;
 }
 button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-time {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 button:hover { color: var(--text-secondary); background: var(--bg-card-hover); }
 button.current { color: var(--text-primary); background: var(--bg-card-hover); box-shadow: inset 2px 0 0 var(--primary); }
 button.forgot { color: var(--danger); }

@@ -18,6 +18,8 @@ defineProps<{ markdown: string }>()
 
 <style scoped>
 .description-panel {
+  /* 中文长文 35~45 字/行最舒适；不限宽时主栏最宽 860px，一行可达 60 字。 */
+  max-width: 700px;
   min-height: 360px;
   padding: 22px 3px 8px;
 }

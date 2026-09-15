@@ -5,6 +5,7 @@ defineProps<{
   questions: RecallQuestion[]
   draft: Record<number, string>
   answersVisible: boolean
+  saveState?: 'idle' | 'saved'
 }>()
 defineEmits<{ update: [questionId: number, answer: string] }>()
 </script>
@@ -14,7 +15,9 @@ defineEmits<{ update: [questionId: number, answer: string] }>()
     <div class="section-heading">
       <h2 id="recall-heading">请先回忆</h2>
       <div class="heading-meta">
-        <span>输入会自动保存</span>
+        <span class="save-hint" :class="{ saved: saveState === 'saved' }" aria-live="polite">
+          {{ saveState === 'saved' ? '已保存' : '输入会自动保存' }}
+        </span>
       </div>
     </div>
     <div class="questions">
@@ -42,6 +45,8 @@ defineEmits<{ update: [questionId: number, answer: string] }>()
 h2 { margin: 0; font-size: 16px; font-weight: 620; }
 .heading-meta { display: flex; align-items: center; gap: 12px; }
 .heading-meta span { color: var(--text-muted); font-size: 12px; }
+.save-hint { transition: color 150ms ease; }
+.save-hint.saved { color: var(--success-strong); }
 .heading-meta a { display: inline-flex; align-items: center; gap: 4px; color: var(--primary); font-size: 12px; text-decoration: none; }
 .heading-meta a:hover { text-decoration: underline; }
 .questions {

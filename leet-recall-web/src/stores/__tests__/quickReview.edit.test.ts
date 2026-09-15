@@ -134,13 +134,12 @@ describe('quickReviewStore 编辑模式', () => {
     expect(store.editError).toContain('代码围栏')
   })
 
-  it('编辑态下切题、结束复习和提交复习结果全部不生效', async () => {
+  it('编辑态下切题和提交复习结果全部不生效', async () => {
     const store = useQuickReviewStore()
     await store.loadQueue()
     await store.enterEdit()
 
     await store.move(1)
-    await store.endReview()
     const result = await store.submit('KNOWN')
 
     expect(result).toBeNull()

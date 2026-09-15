@@ -40,7 +40,6 @@ describe('QuickReviewView', () => {
       global: {
         plugins: [createPinia()],
         stubs: {
-          ReviewProgress: true,
           RecallQuestionList: { template: '<div data-test="recall-content">回忆内容</div>' },
           HintPanel: true,
           AnswerPanel: true,

@@ -1,4 +1,4 @@
-import { onBeforeUnmount, onMounted } from 'vue'
+import { onActivated, onBeforeUnmount, onDeactivated, onMounted } from 'vue'
 
 export interface ReviewShortcutHandlers {
   onForgot: () => void
@@ -8,7 +8,6 @@ export interface ReviewShortcutHandlers {
   onToggleAnswer: () => void
   onNext: () => void
   onPrevious: () => void
-  onEnd: () => void
 }
 
 export function isEditableTarget(target: EventTarget | null): boolean {
@@ -29,7 +28,12 @@ export function useReviewShortcuts(handlers: ReviewShortcutHandlers): void {
     handlers[action]()
   }
 
+  // 视图在 KeepAlive 中缓存，切页只会 deactivate 不会 unmount；
+  // 不在 deactivated 时移除监听，快捷键会泄漏到其他页面（如在默写页按 1 会提交复习评分）。
+  // 同一函数引用重复 add/removeEventListener 幂等，四组钩子并存安全。
   onMounted(() => window.addEventListener('keydown', handleKeydown))
+  onActivated(() => window.addEventListener('keydown', handleKeydown))
+  onDeactivated(() => window.removeEventListener('keydown', handleKeydown))
   onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
 }
 
@@ -42,7 +46,6 @@ export function shortcutAction(event: Pick<KeyboardEvent, 'key'>): keyof ReviewS
     case 'a': return 'onToggleAnswer'
     case 'arrowright': return 'onNext'
     case 'arrowleft': return 'onPrevious'
-    case 'escape': return 'onEnd'
     default: return null
   }
 }

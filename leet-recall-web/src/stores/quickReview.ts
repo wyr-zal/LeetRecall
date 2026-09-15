@@ -98,24 +98,28 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
         currentProblem.value = null
         return
       }
-      if (currentProblemId.value !== null
-        && (currentProblemId.value !== previousProblemId || currentProblem.value === null)) {
-        await loadProblem(currentProblemId.value)
-      }
+      // 同题也重拉：导入/编辑会覆盖当前题内容，切回页面必须直接拿到新数据，不再要求 F5。
+      // 题号没变时保留面板展开状态与计时；换题走完整重置。
+      await loadProblem(currentProblemId.value, {
+        keepPanelState: currentProblemId.value === previousProblemId,
+      })
     } catch (cause) {
       if (!currentProblem.value) error.value = cause instanceof Error ? cause.message : '加载失败，请重试'
     }
   }
 
-  async function loadProblem(problemId: number): Promise<void> {
+  /** keepPanelState：同题重拉（切页回来）时保留提示/答案展开状态与计时，只换数据。 */
+  async function loadProblem(problemId: number, options?: { keepPanelState?: boolean }): Promise<void> {
     detailLoading.value = true
     error.value = ''
     try {
       currentProblem.value = await reviewApi.getProblemDetail(problemId)
       currentProblemId.value = problemId
-      hintVisible.value = false
-      answerVisible.value = false
-      startTime.value = Date.now()
+      if (!options?.keepPanelState) {
+        hintVisible.value = false
+        answerVisible.value = false
+        startTime.value = Date.now()
+      }
       persistCurrent()
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : '加载失败，请重试'
@@ -180,6 +184,8 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
     await loadProblem(problemId)
   }
 
+  let saveStateTimer: ReturnType<typeof setTimeout> | undefined
+
   function updateDraft(questionId: number, answer: string): void {
     const problemId = currentProblemId.value
     if (problemId === null) return
@@ -192,6 +198,8 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
     }
     writeStorage(DRAFTS_KEY, recallDrafts.value)
     saveState.value = 'saved'
+    if (saveStateTimer) clearTimeout(saveStateTimer)
+    saveStateTimer = setTimeout(() => { saveState.value = 'idle' }, 2000)
   }
 
   function toggleHint(): void {
@@ -247,12 +255,6 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
     if (next) await loadProblem(next.problemId)
   }
 
-  async function endReview(): Promise<void> {
-    if (editing.value) return
-    const first = todayQueue.value[0]
-    if (first) await loadProblem(first.problemId)
-  }
-
   function persistCurrent(): void {
     writeStorage(CURRENT_KEY, currentProblemId.value)
     if (currentProblemId.value !== null) writeActiveProblemId(currentProblemId.value)
@@ -288,7 +290,6 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
     toggleAnswer,
     submit,
     move,
-    endReview,
     enterEdit,
     cancelEdit,
     saveEdit,

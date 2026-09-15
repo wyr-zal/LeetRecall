@@ -23,4 +23,18 @@ describe('RecallQuestionList', () => {
     const wrapper = mount(RecallQuestionList, { props: baseProps })
     expect(wrapper.find('a').exists()).toBe(false)
   })
+
+  it('shows the saved confirmation when the store reports a fresh save', () => {
+    const wrapper = mount(RecallQuestionList, { props: { ...baseProps, saveState: 'saved' } })
+
+    expect(wrapper.get('.save-hint').text()).toBe('已保存')
+    expect(wrapper.get('.save-hint').classes()).toContain('saved')
+  })
+
+  it('shows the autosave hint by default', () => {
+    const wrapper = mount(RecallQuestionList, { props: baseProps })
+
+    expect(wrapper.get('.save-hint').text()).toBe('输入会自动保存')
+    expect(wrapper.get('.save-hint').classes()).not.toContain('saved')
+  })
 })

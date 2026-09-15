@@ -19,6 +19,10 @@ export interface ReviewQueueItem extends ProblemSearchItem {
   masteryLevel: MasteryLevel
   completed: boolean
   todayResult?: MasteryLevel
+  /** 回忆答案、笔记、默写提交、代码批注四者中最晚的一次修改时间；从未动过为 null。 */
+  lastReviewedAt?: string | null
+  /** 题目内容最后一次被更新（外部 JSON 导入 / 页面编辑）的时间；从未更新过为 null。 */
+  contentUpdatedAt?: string | null
 }
 
 export interface TodayReviewQueue {
@@ -42,6 +46,8 @@ export interface ReviewProblemDetail extends ProblemSearchItem {
   coreIdea: string
   mistakes: string[]
   keyCode: string
+  updatedAt?: string | null
+  externalImported?: boolean
 }
 
 export interface RecallAnswerInput {

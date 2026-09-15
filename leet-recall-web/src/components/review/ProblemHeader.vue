@@ -3,13 +3,29 @@ import { computed } from 'vue'
 import BaseTag from '@/components/common/BaseTag.vue'
 import type { Difficulty } from '@/types/problem'
 
-const props = defineProps<{ number: number; title: string; difficulty: Difficulty; tags: string[] }>()
+const props = defineProps<{
+  number: number
+  title: string
+  difficulty: Difficulty
+  tags: string[]
+  updatedAt?: string | null
+  externalImported?: boolean
+}>()
 
 const difficultyLabel = computed(() => ({
   EASY: '简单',
   MEDIUM: '中等',
   HARD: '困难',
 })[props.difficulty])
+
+const updatedLabel = computed(() => {
+  if (!props.updatedAt) return ''
+  const date = new Date(props.updatedAt)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(date)
+})
 </script>
 
 <template>
@@ -20,6 +36,10 @@ const difficultyLabel = computed(() => ({
       <div class="tags" aria-label="题目标签">
         <BaseTag v-for="tag in tags.slice(0, 4)" :key="tag" :label="tag" />
       </div>
+      <span v-if="externalImported || updatedLabel" class="content-meta">
+        <span v-if="externalImported" class="source-badge">外部导入</span>
+        <time v-if="updatedLabel" :datetime="updatedAt ?? undefined">{{ updatedLabel }}</time>
+      </span>
     </div>
   </header>
 </template>
@@ -42,6 +62,26 @@ h1 {
 h1 span { color: var(--primary); font-weight: 620; }
 .problem-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
 .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.content-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.source-badge {
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  border: 1px solid var(--border-secondary);
+  border-radius: 5px;
+  color: var(--text-muted);
+}
+@media (max-width: 640px) {
+  .content-meta { flex-basis: 100%; margin-left: 0; }
+}
 .difficulty {
   padding: 3px 7px;
   font-size: 10px;

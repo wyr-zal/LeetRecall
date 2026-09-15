@@ -4,7 +4,6 @@ import { storeToRefs } from 'pinia'
 import { BrainCircuit, FileText, NotebookPen, SquarePen } from 'lucide-vue-next'
 import { useQuickReviewStore } from '@/stores/quickReview'
 import { useReviewShortcuts } from '@/composables/useReviewShortcuts'
-import ReviewProgress from '@/components/review/ReviewProgress.vue'
 import ProblemHeader from '@/components/review/ProblemHeader.vue'
 import ProblemDescription from '@/components/review/ProblemDescription.vue'
 import ProblemContentEditor from '@/components/review/ProblemContentEditor.vue'
@@ -33,8 +32,8 @@ const {
   detailLoading,
   submitting,
   error,
-  completedCount,
   currentDraft,
+  saveState,
   editing,
   editContent,
   editLoading,
@@ -70,7 +69,7 @@ function saveContent(payload: ProblemContentUpdate): void {
   void store.saveEdit(payload)
 }
 
-// 编辑态必须挂起全部快捷键：焦点不在输入框时，←/→ 会切题、Esc 会结束复习，都会丢弃未保存内容。
+// 编辑态必须挂起全部快捷键：焦点不在输入框时，←/→ 会切题，都会丢弃未保存内容。
 function whenNotEditing(action: () => void): () => void {
   return () => {
     if (editing.value) return
@@ -86,18 +85,11 @@ useReviewShortcuts({
   onToggleAnswer: whenNotEditing(() => showRecall(store.toggleAnswer)),
   onNext: whenNotEditing(() => void store.move(1)),
   onPrevious: whenNotEditing(() => void store.move(-1)),
-  onEnd: whenNotEditing(() => void store.endReview()),
 })
 </script>
 
 <template>
   <main class="review-page">
-    <ReviewProgress
-      :completed="completedCount"
-      :total="todayQueue.length"
-      @end="store.endReview"
-    />
-
     <LoadingState v-if="loading" />
     <ErrorState v-else-if="error && !currentProblem" :message="error" @retry="store.loadQueue" />
     <EmptyState
@@ -117,6 +109,8 @@ useReviewShortcuts({
               :title="currentProblem.title"
               :difficulty="currentProblem.difficulty"
               :tags="currentProblem.tags"
+              :updated-at="currentProblem.updatedAt"
+              :external-imported="currentProblem.externalImported"
             />
 
             <template v-if="editing">
@@ -202,6 +196,7 @@ useReviewShortcuts({
                   :questions="currentProblem.recallQuestions"
                   :draft="currentDraft"
                   :answers-visible="answerVisible"
+                  :save-state="saveState"
                   @update="store.updateDraft"
                 />
                 <HintPanel
@@ -253,7 +248,7 @@ useReviewShortcuts({
   padding: 14px 0;
   margin: 0 auto;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
 }
 

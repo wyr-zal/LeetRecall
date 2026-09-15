@@ -75,4 +75,34 @@ describe('quickReviewStore', () => {
 
     expect(JSON.parse(localStorage.getItem(ACTIVE_PROBLEM_KEY) ?? 'null')).toBe(8)
   })
+
+  // 导入覆盖当前题后切回页面，题号不变也必须重拉详情，不再要求 F5。
+  it('refetches the current problem detail on queue refresh and keeps panel visibility', async () => {
+    const store = useQuickReviewStore()
+    await store.loadQueue()
+    store.toggleHint()
+    store.toggleAnswer()
+    expect(reviewApi.getProblemDetail).toHaveBeenCalledTimes(1)
+
+    await store.refreshQueue()
+
+    expect(reviewApi.getProblemDetail).toHaveBeenCalledTimes(2)
+    expect(store.currentProblemId).toBe(1)
+    expect(store.hintVisible).toBe(true)
+    expect(store.answerVisible).toBe(true)
+  })
+
+  it('resets the panels when queue refresh lands on a different problem', async () => {
+    const store = useQuickReviewStore()
+    await store.loadQueue()
+    store.toggleHint()
+    store.toggleAnswer()
+    localStorage.setItem(ACTIVE_PROBLEM_KEY, JSON.stringify(8))
+
+    await store.refreshQueue()
+
+    expect(store.currentProblemId).toBe(8)
+    expect(store.hintVisible).toBe(false)
+    expect(store.answerVisible).toBe(false)
+  })
 })
