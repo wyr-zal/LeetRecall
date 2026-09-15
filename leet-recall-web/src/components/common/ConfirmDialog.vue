@@ -1,11 +1,28 @@
 <script setup lang="ts">
-defineProps<{
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+
+const props = defineProps<{
   open: boolean
   title: string
   description: string
   confirmLabel?: string
 }>()
-defineEmits<{ confirm: []; cancel: [] }>()
+const emit = defineEmits<{ confirm: []; cancel: [] }>()
+const cancelButtonRef = ref<HTMLButtonElement | null>(null)
+
+function onKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape' && props.open) emit('cancel')
+}
+
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
+
+// 打开时聚焦「取消」：危险操作不默认聚焦确认键，避免误按 Enter 直接确认。
+watch(() => props.open, async (open) => {
+  if (!open) return
+  await nextTick()
+  cancelButtonRef.value?.focus()
+})
 </script>
 
 <template>
@@ -15,7 +32,7 @@ defineEmits<{ confirm: []; cancel: [] }>()
         <h2 :id="`${title}-dialog-title`">{{ title }}</h2>
         <p>{{ description }}</p>
         <div class="actions">
-          <button type="button" class="secondary" @click="$emit('cancel')">取消</button>
+          <button ref="cancelButtonRef" type="button" class="secondary" @click="$emit('cancel')">取消</button>
           <button type="button" class="primary" @click="$emit('confirm')">{{ confirmLabel ?? '确定' }}</button>
         </div>
       </section>

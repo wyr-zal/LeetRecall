@@ -122,7 +122,9 @@ describe('ProblemImportView', () => {
 
     const results = Array.from(dialog.querySelectorAll<HTMLButtonElement>('.browser-result'))
     expect(results).toHaveLength(1)
-    expect(results[0]?.textContent).toContain('42 · 接雨水')
+    expect(results[0]?.textContent).toContain('42')
+    expect(results[0]?.textContent).toContain('接雨水')
+    expect(results[0]?.textContent).toContain('Hot100 7')
     results[0]?.click()
     await flushPromises()
 
@@ -141,8 +143,25 @@ describe('ProblemImportView', () => {
     await wrapper.get('.clear-search').trigger('click')
 
     expect(wrapper.text()).toContain('最近选择')
-    expect(wrapper.get('.search-result').text()).toContain('1 · 两数之和')
+    expect(wrapper.get('.search-result').text()).toContain('1')
+    expect(wrapper.get('.search-result').text()).toContain('两数之和')
     expect(localStorage.getItem('leetrecall.problem-import.recent')).toBe('[1]')
+  })
+
+  // 移动零：Hot100 order=4，LeetCode 283——主号必须是 LeetCode 题号，与复习/默写页一致。
+  it('echoes the LeetCode number as the primary number when a problem is selected', async () => {
+    const wrapper = mount(ProblemImportView, {
+      global: { stubs: { MarkdownContent: true, ConfirmDialog: true } },
+    })
+    await flushPromises()
+
+    await wrapper.get('#hot100-search').setValue('移动零')
+    await wrapper.get('.search-result').trigger('click')
+    await flushPromises()
+
+    const input = wrapper.get('#hot100-search').element as HTMLInputElement
+    expect(input.value).toBe('283 · 移动零（简单）')
+    expect(input.value).not.toContain('4.')
   })
 
   it('keeps task preview collapsed by default and provides a local JSON file picker', async () => {

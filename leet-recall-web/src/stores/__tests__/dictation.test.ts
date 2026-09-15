@@ -59,4 +59,46 @@ describe('dictationStore', () => {
     expect(store.currentProblemId).toBe(1)
     expect(dictationApi.getProblemDetail).toHaveBeenCalledWith(1)
   })
+
+  it('refetches the answer each time it is revealed so reimported code shows without reload', async () => {
+    localStorage.setItem(ACTIVE_PROBLEM_KEY, JSON.stringify(1))
+    const viewAnswerSpy = vi.spyOn(dictationApi, 'viewAnswer')
+      .mockResolvedValueOnce({ answers: { blank_1: 'old' }, fullCode: 'old code' })
+      .mockResolvedValueOnce({ answers: { blank_1: 'new' }, fullCode: 'new code' })
+    const store = useDictationStore()
+    await store.loadQueue()
+
+    await store.toggleAnswer()
+    expect(store.answerVisible).toBe(true)
+    expect(store.revealedAnswer?.fullCode).toBe('old code')
+
+    await store.toggleAnswer()
+    expect(store.answerVisible).toBe(false)
+
+    await store.toggleAnswer()
+    expect(store.answerVisible).toBe(true)
+    expect(store.revealedAnswer?.fullCode).toBe('new code')
+    expect(viewAnswerSpy).toHaveBeenCalledTimes(2)
+  })
+
+  // 导入覆盖默写模板后切回页面，题号不变也必须重拉模板，不再要求 F5。
+  it('refetches the template on queue refresh, keeping drafts but resetting the stale score view', async () => {
+    localStorage.setItem(ACTIVE_PROBLEM_KEY, JSON.stringify(1))
+    const store = useDictationStore()
+    await store.loadQueue()
+    expect(dictationApi.getProblemDetail).toHaveBeenCalledTimes(1)
+
+    store.updateAnswers({ blank_1: 'root' })
+    await store.submit()
+    expect(store.submitResult).not.toBeNull()
+
+    await store.refreshQueue()
+
+    expect(dictationApi.getProblemDetail).toHaveBeenCalledTimes(2)
+    expect(store.currentProblemId).toBe(1)
+    // 旧评分/答案视图对应旧模板，重置；草稿按题号保留。
+    expect(store.submitResult).toBeNull()
+    expect(store.answerVisible).toBe(false)
+    expect(store.currentAnswers.blank_1).toBe('root')
+  })
 })

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Flame, Moon, Search, Sun, UserRound } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { reviewApi } from '@/api/review'
@@ -15,6 +15,8 @@ const keyword = ref('')
 const results = ref<ProblemSearchItem[]>([])
 const searchOpen = ref(false)
 const searching = ref(false)
+const activeIndex = ref(-1)
+const searchWrap = ref<HTMLElement | null>(null)
 const streak = ref(0)
 let searchTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -26,12 +28,15 @@ const routeTitle = computed(() => ({
 }[route.path] ?? '学习工作台'))
 
 onMounted(async () => {
+  document.addEventListener('click', closeSearchWhenClickedOutside)
   try {
     streak.value = await reviewApi.getReviewStreak()
   } catch {
     streak.value = 0
   }
 })
+
+onBeforeUnmount(() => document.removeEventListener('click', closeSearchWhenClickedOutside))
 
 function handleInput(): void {
   if (searchTimer) clearTimeout(searchTimer)
@@ -52,6 +57,31 @@ function handleInput(): void {
   }, 220)
 }
 
+// 结果集变化后重置键盘高亮，避免沿用上一轮搜索的下标。
+watch(results, () => {
+  activeIndex.value = -1
+})
+
+/** ↑↓ 在结果间循环移动，Enter 选择高亮项（未移动过则选第一项）。 */
+function handleSearchKeydown(event: KeyboardEvent): void {
+  if (!searchOpen.value || results.value.length === 0) return
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    activeIndex.value = (activeIndex.value + 1) % results.value.length
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    activeIndex.value = (activeIndex.value <= 0 ? results.value.length : activeIndex.value) - 1
+  } else if (event.key === 'Enter') {
+    event.preventDefault()
+    const result = results.value[activeIndex.value >= 0 ? activeIndex.value : 0]
+    if (result) void selectProblem(result)
+  }
+}
+
+function closeSearchWhenClickedOutside(event: MouseEvent): void {
+  if (searchWrap.value && !searchWrap.value.contains(event.target as Node)) searchOpen.value = false
+}
+
 async function selectProblem(problem: ProblemSearchItem): Promise<void> {
   keyword.value = ''
   searchOpen.value = false
@@ -67,7 +97,7 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
         <span>LEETRECALL</span>
         <strong>{{ routeTitle }}</strong>
       </div>
-      <div class="search-wrap">
+      <div ref="searchWrap" class="search-wrap">
         <Search class="search-icon" :size="18" aria-hidden="true" />
         <label class="screen-reader-only" for="global-search">搜索题目</label>
         <input
@@ -76,18 +106,24 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
           type="search"
           autocomplete="off"
           placeholder="搜索题号或题目"
+          :aria-activedescendant="activeIndex >= 0 ? `global-search-option-${activeIndex}` : undefined"
           @input="handleInput"
           @focus="searchOpen = results.length > 0"
           @keydown.esc="searchOpen = false"
+          @keydown="handleSearchKeydown"
         >
         <span v-if="searching" class="searching">检索中</span>
         <div v-if="searchOpen" class="search-results" role="listbox" aria-label="题目搜索结果">
           <button
-            v-for="result in results"
+            v-for="(result, index) in results"
+            :id="`global-search-option-${index}`"
             :key="result.problemId"
             type="button"
             role="option"
+            :aria-selected="index === activeIndex"
+            :class="{ active: index === activeIndex }"
             @click="selectProblem(result)"
+            @mouseenter="activeIndex = index"
           >
             <span>{{ result.leetcodeNumber }}.</span>
             {{ result.title }}
@@ -224,7 +260,8 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
 }
 
 .search-results button:hover,
-.search-results button:focus-visible {
+.search-results button:focus-visible,
+.search-results button.active {
   color: var(--text-primary);
   background: var(--bg-card-hover);
 }

@@ -81,7 +81,6 @@ export const useDictationStore = defineStore('dictation', () => {
     try {
       const queue = await dictationApi.getTodayQueue()
       todayQueue.value = queue.items
-      const previousProblemId = currentProblemId.value
       const activeProblemId = readActiveProblemId()
       if (activeProblemId !== null && queue.items.some((item) => item.problemId === activeProblemId)) {
         currentProblemId.value = activeProblemId
@@ -96,10 +95,9 @@ export const useDictationStore = defineStore('dictation', () => {
         history.value = []
         return
       }
-      if (currentProblemId.value !== null
-        && (currentProblemId.value !== previousProblemId || currentProblem.value === null)) {
-        await loadProblem(currentProblemId.value)
-      }
+      // 同题也重拉：导入覆盖默写模板后，切回页面立即生效。答案视图、评分结果对应旧模板，
+      // 一并重置（草稿按题号独立保留，未受影响的空位内容不丢）。
+      await loadProblem(currentProblemId.value)
     } catch (cause) {
       if (!currentProblem.value) error.value = cause instanceof Error ? cause.message : '加载失败，请重试'
     }
@@ -147,17 +145,16 @@ export const useDictationStore = defineStore('dictation', () => {
     revealedAnswer.value = null
   }
 
-  /** 首次显示会向后端留痕（本次最高 60 分），之后可在答案与默写之间自由切换，草稿不丢。 */
+  /** 首次显示会向后端留痕（本次最高 60 分），之后可在答案与默写之间自由切换，草稿不丢。
+   *  每次打开都重新拉取，避免题目被导入覆盖后仍显示旧答案。 */
   async function toggleAnswer(): Promise<void> {
     if (currentProblemId.value === null) return
     if (answerVisible.value) {
       answerVisible.value = false
       return
     }
-    if (!revealedAnswer.value) {
-      revealedAnswer.value = await dictationApi.viewAnswer(currentProblemId.value, sessionId)
-      viewedAnswer.value = true
-    }
+    revealedAnswer.value = await dictationApi.viewAnswer(currentProblemId.value, sessionId)
+    viewedAnswer.value = true
     answerVisible.value = true
   }
 

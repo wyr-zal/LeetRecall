@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onActivated, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { dictationApi } from '@/api/dictation'
 import { useDictationStore } from '@/stores/dictation'
+import { isEditableTarget } from '@/composables/useReviewShortcuts'
 import DictationProgress from '@/components/dictation/DictationProgress.vue'
 import DictationProblemHeader from '@/components/dictation/DictationProblemHeader.vue'
+import DictationProblemPicker from '@/components/dictation/DictationProblemPicker.vue'
 import DictationActions from '@/components/dictation/DictationActions.vue'
 import CompletionRing from '@/components/dictation/CompletionRing.vue'
 import KeywordPanel from '@/components/dictation/KeywordPanel.vue'
@@ -30,6 +32,7 @@ const store = useDictationStore()
 const annotationStore = useCodeAnnotationStore()
 const {
   todayQueue,
+  currentProblemId,
   currentProblem,
   currentAnswers,
   currentAccuracy,
@@ -60,8 +63,12 @@ const visibleAnnotations = computed(() => answerVisible.value ? resolvedAnnotati
   resolved: true,
 })))
 let firstActivation = true
+const pickerOpen = ref(false)
 
-onMounted(() => store.loadQueue())
+onMounted(() => {
+  void store.loadQueue()
+  window.addEventListener('keydown', handleDictationKeydown)
+})
 watch(currentProblem, (problem) => {
   draftAnnotationAnchor.value = null
   selectedAnnotationId.value = null
@@ -73,13 +80,44 @@ watch(currentProblem, (problem) => {
 watch(revealedAnswer, (answer) => {
   annotationStore.setCode(answer?.fullCode ?? '')
 })
+// 视图被 KeepAlive 缓存：监听必须跟随 activated/deactivated 挂卸，否则会泄漏到复习页。
 onActivated(() => {
+  window.addEventListener('keydown', handleDictationKeydown)
   if (firstActivation) {
     firstActivation = false
     return
   }
   void store.refreshQueue()
 })
+onDeactivated(() => window.removeEventListener('keydown', handleDictationKeydown))
+onBeforeUnmount(() => window.removeEventListener('keydown', handleDictationKeydown))
+
+/** Ctrl/Cmd+Enter 任何时候都可提交（焦点多半在空位输入框里，提交有防重入保护）；
+ *  ←/→/A 仅在焦点不在输入区时生效，避免与打字冲突。 */
+function handleDictationKeydown(event: KeyboardEvent): void {
+  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+    event.preventDefault()
+    void store.submit()
+    return
+  }
+  if (isEditableTarget(event.target)) return
+  const key = event.key.toLowerCase()
+  if (key === 'arrowright') {
+    event.preventDefault()
+    void store.move(1)
+  } else if (key === 'arrowleft') {
+    event.preventDefault()
+    void store.move(-1)
+  } else if (key === 'a') {
+    event.preventDefault()
+    void store.toggleAnswer()
+  }
+}
+
+async function pickProblem(problemId: number): Promise<void> {
+  pickerOpen.value = false
+  await store.loadProblem(problemId)
+}
 
 function confirmReset(): void {
   store.reset()
@@ -140,7 +178,7 @@ async function openRecord(recordId: number): Promise<void> {
       :total="todayQueue.length"
       @previous="store.move(-1)"
       @next="store.move(1)"
-      @list="store.loadQueue"
+      @pick="pickerOpen = true"
     />
 
     <LoadingState v-if="loading" />
@@ -177,6 +215,7 @@ async function openRecord(recordId: number): Promise<void> {
               <strong>{{ Math.round(submitResult.accuracy) }}%</strong>
               <span>{{ submitResult.correctCount }} / {{ submitResult.totalCount }} 个空位正确</span>
               <small v-if="submitResult.viewedAnswer">查看过答案，本次最高计 60 分</small>
+              <button type="button" class="next-problem" @click="store.move(1)">下一题<kbd>→</kbd></button>
             </div>
             <DictationActions
               :submitting="submitting"
@@ -228,6 +267,13 @@ async function openRecord(recordId: number): Promise<void> {
       @cancel="resetOpen = false"
     />
     <RecordDetailDialog :detail="recordDetail" @close="recordDetail = null" />
+    <DictationProblemPicker
+      :open="pickerOpen"
+      :items="todayQueue"
+      :current-problem-id="currentProblemId"
+      @select="pickProblem"
+      @close="pickerOpen = false"
+    />
   </main>
 </template>
 
@@ -238,7 +284,10 @@ async function openRecord(recordId: number): Promise<void> {
 .dictation-aside { display: grid; gap: 14px; }
 .history { width: calc(100% - 304px); margin-top: 16px; }
 .score-message { display: flex; align-items: baseline; gap: 11px; padding: 12px 14px; margin-top: 12px; border: 1px solid var(--border-primary); border-radius: 8px; background: var(--bg-input); box-shadow: inset 3px 0 0 var(--primary); }
-.score-message strong { color: var(--primary); font-size: 19px; }.score-message span { color: var(--text-secondary); font-size: 13px; }.score-message small { margin-left: auto; color: var(--warning); font-size: 11px; }
+.score-message strong { color: var(--primary); font-size: 19px; }.score-message span { color: var(--text-secondary); font-size: 13px; }.score-message small { color: var(--warning); font-size: 11px; }
+.score-message .next-problem { display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 0 12px; color: var(--on-primary); border: 1px solid var(--primary); border-radius: 7px; background: var(--primary); }
+.score-message .next-problem:hover:not(:disabled) { border-color: var(--primary-hover); background: var(--primary-hover); }
+.score-message .next-problem kbd { padding: 1px 5px; color: inherit; font-size: 10px; border: 1px solid currentColor; border-radius: 4px; opacity: 0.62; }
 @media (max-width: 1279px) {
   .dictation-page { width: min(1100px, calc(100% - 36px)); }
   .dictation-grid { grid-template-columns: minmax(0, 1fr); }
