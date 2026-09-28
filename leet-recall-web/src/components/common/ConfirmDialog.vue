@@ -67,4 +67,13 @@ p { margin: 0; color: var(--text-secondary); line-height: 1.65; }
 button { min-width: 82px; min-height: 40px; border-radius: 8px; }
 .secondary { color: var(--text-secondary); border: 1px solid var(--border-primary); background: transparent; }
 .primary { color: var(--on-primary); border: 1px solid var(--primary); background: var(--primary); }
+
+@media (max-width: 480px) {
+  .backdrop {
+    padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+  }
+
+  .dialog { padding: 20px; }
+  button { min-height: 44px; }
+}
 </style>

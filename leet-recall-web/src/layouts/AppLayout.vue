@@ -62,5 +62,9 @@ function toggleSidebar(): void {
   .app-shell {
     display: block;
   }
+
+  .app-content {
+    border-left: 0;
+  }
 }
 </style>

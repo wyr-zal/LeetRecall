@@ -168,7 +168,7 @@ useReviewShortcuts({
                 >
                   <NotebookPen :size="16" />我的笔记
                 </button>
-                <button class="edit-entry" type="button" @click="store.enterEdit">
+                <button class="edit-entry" type="button" aria-label="编辑题目" @click="store.enterEdit">
                   <SquarePen :size="15" />编辑
                 </button>
               </nav>
@@ -369,7 +369,34 @@ useReviewShortcuts({
 }
 
 @media (max-width: 720px) {
-  .review-page { width: calc(100% - 24px); padding: 20px 0 88px; }
+  .review-page {
+    width: calc(100% - 24px);
+    padding: 20px 0 calc(88px + env(safe-area-inset-bottom));
+  }
+
   .review-aside { grid-template-columns: 1fr; }
+
+  .study-tabs > button:not(.edit-entry) {
+    flex: 1 1 0;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+    min-height: 52px;
+    gap: 3px;
+    padding: 4px 2px;
+    font-size: 11px;
+  }
+
+  .study-tabs .edit-entry {
+    flex: 0 0 44px;
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+    gap: 0;
+    padding: 0;
+    margin: 4px 0 4px 4px;
+    font-size: 0;
+  }
 }
 </style>

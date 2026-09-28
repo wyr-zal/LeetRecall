@@ -294,5 +294,5 @@ async function openRecord(recordId: number): Promise<void> {
   .dictation-aside { grid-template-columns: repeat(3, 1fr); }
   .history { width: 100%; }
 }
-@media (max-width: 760px) { .dictation-page { width: calc(100% - 24px); padding: 20px 0 88px; }.dictation-aside { grid-template-columns: 1fr; }.score-message { align-items: flex-start; flex-direction: column; }.score-message small { margin-left: 0; } }
+@media (max-width: 760px) { .dictation-page { width: calc(100% - 24px); padding: 20px 0 calc(88px + env(safe-area-inset-bottom)); }.dictation-aside { grid-template-columns: 1fr; }.score-message { align-items: flex-start; flex-direction: column; }.score-message small { margin-left: 0; } }
 </style>

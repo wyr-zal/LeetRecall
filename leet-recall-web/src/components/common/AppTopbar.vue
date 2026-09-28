@@ -340,11 +340,23 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
 
 @media (max-width: 720px) {
   .topbar {
-    padding-inline: 14px;
+    padding-inline: 12px;
+  }
+
+  .topbar-start {
+    flex: 1 1 auto;
+    gap: 8px;
   }
 
   .search-wrap {
-    width: min(65vw, 320px);
+    width: auto;
+    min-width: 0;
+    max-width: 320px;
+    flex: 1 1 0;
+  }
+
+  .search-wrap input {
+    height: 40px;
   }
 
   .route-context { display: none; }
@@ -354,13 +366,24 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
   }
 
   .topbar-actions {
-    gap: 8px;
+    flex: 0 0 auto;
+    gap: 6px;
   }
 
   .theme-toggle span {
     display: none;
   }
 
-  .streak { padding: 7px; }
+  .theme-toggle {
+    justify-content: center;
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0;
+  }
+
+  .streak {
+    min-height: 36px;
+    padding: 7px;
+  }
 }
 </style>

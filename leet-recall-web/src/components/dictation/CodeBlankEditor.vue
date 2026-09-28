@@ -553,5 +553,10 @@ function handleFullscreenChange(): void {
 :deep(.dictation-blank-widget input:focus) { border-color: var(--primary-hover); background: var(--primary-soft); }
 :deep(.dictation-blank-widget input.is-correct) { color: var(--success-strong); border-color: var(--success); background: rgba(34, 197, 94, 0.16); }
 :deep(.dictation-blank-widget input.is-incorrect) { color: var(--danger-strong); border-color: var(--danger); background: var(--danger-soft); }
-@media (max-width: 720px) { .editor { height: 420px; } }
+@media (max-width: 720px) {
+  .editor { height: 420px; }
+  .editor-toolbar { padding-inline: 8px; }
+  .toolbar-actions { gap: 2px; }
+  .toolbar-actions button { width: 44px; height: 44px; }
+}
 </style>

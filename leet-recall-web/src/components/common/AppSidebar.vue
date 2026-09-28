@@ -40,6 +40,10 @@ const navItems = [
         <component :is="item.icon" :size="21" :stroke-width="1.8" />
         <span>{{ item.label }}</span>
       </RouterLink>
+      <RouterLink class="nav-link mobile-settings" to="/settings" aria-label="设置">
+        <Settings :size="21" :stroke-width="1.8" />
+        <span>设置</span>
+      </RouterLink>
     </nav>
 
     <div class="sidebar-bottom">
@@ -176,6 +180,10 @@ const navItems = [
   border-top: 1px solid var(--border-secondary);
 }
 
+.mobile-settings {
+  display: none;
+}
+
 .bottom-action {
   width: 100%;
   font-size: 15px;
@@ -222,7 +230,7 @@ const navItems = [
     bottom: 0;
     flex-direction: row;
     width: 100%;
-    height: 64px;
+    height: calc(64px + env(safe-area-inset-bottom));
     border-top: 1px solid var(--border-primary);
     border-right: 0;
     box-shadow: 0 -12px 32px var(--shadow-medium);
@@ -235,13 +243,32 @@ const navItems = [
 
   .navigation {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     width: 100%;
-    padding: 8px;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
   }
 
   .nav-link {
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
     min-height: 48px;
+    padding: 2px;
+  }
+
+  .nav-link span {
+    display: block;
+    margin-left: 0;
+    font-size: 10px;
+    line-height: 1.1;
+  }
+
+  .collapsed .nav-link span {
+    display: block;
+  }
+
+  .mobile-settings {
+    display: flex;
   }
 
   .nav-link.router-link-active::before {

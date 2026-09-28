@@ -141,4 +141,18 @@ function statusLabel(item: DictationQueueItem): string {
 .picker-list button.done > span:first-of-type { color: var(--success); }
 .picker-list .status { color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .picker-list .empty { padding: 18px 10px; margin: 0; color: var(--text-muted); font-size: 13px; }
+
+@media (max-width: 560px) {
+  .picker-backdrop {
+    padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+  }
+
+  .picker {
+    max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    padding: 16px;
+  }
+
+  .picker-list button { min-height: 44px; }
+  .picker-header button { width: 44px; height: 44px; }
+}
 </style>

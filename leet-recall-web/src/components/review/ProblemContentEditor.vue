@@ -462,5 +462,11 @@ textarea { resize: vertical; }
 @media (max-width: 640px) {
   .editor-bar { align-items: stretch; flex-direction: column; }
   .field--narrow { flex: 1 1 100%; }
+  input, select, textarea { min-height: 44px; }
+  .question-editor-tools button { width: 40px; height: 40px; }
+  .mistake-row { grid-template-columns: minmax(0, 1fr) 40px; }
+  .mistake-row button { height: 40px; }
+  .tag-chip button { display: inline-grid; width: 36px; height: 36px; place-items: center; }
+  .ghost-button, .primary-button { min-height: 44px; justify-content: center; }
 }
 </style>

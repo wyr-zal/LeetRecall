@@ -39,6 +39,7 @@ button { display: inline-flex; align-items: center; justify-content: center; gap
   .dictation-progress { grid-template-columns: 1fr; }
   .back, .navigation { justify-self: stretch; }
   .navigation button { flex: 1; }
+  button { min-height: 44px; }
   .center-progress { grid-row: auto; grid-column: auto; }
 }
 </style>

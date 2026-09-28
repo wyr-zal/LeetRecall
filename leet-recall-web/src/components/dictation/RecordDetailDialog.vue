@@ -53,4 +53,16 @@ article.incorrect { border-color: rgba(239, 68, 68, 0.35); background: rgba(239,
 h3 { margin: 0 0 10px; font: 600 12px/1.4 "JetBrains Mono", monospace; color: var(--text-secondary); }
 dl { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0; }
 dt { margin-bottom: 4px; color: var(--text-muted); font-size: 11px; } dd { margin: 0; color: var(--text-secondary); font: 12px/1.5 "JetBrains Mono", monospace; overflow-wrap: anywhere; }
+
+@media (max-width: 560px) {
+  .backdrop {
+    padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+  }
+
+  .dialog { max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+  header { padding: 16px; }
+  header button { width: 44px; height: 44px; flex: 0 0 auto; }
+  .answers { padding: 14px; }
+  dl { grid-template-columns: 1fr; }
+}
 </style>
