@@ -16,6 +16,7 @@ public enum ErrorCode {
     EXTERNAL_IMPORT_NOT_READY(40007, "JSON 尚未通过全部硬校验"),
     EXTERNAL_IMPORT_OVERWRITE_CONFIRMATION_REQUIRED(40008, "覆盖已有题目前必须明确确认"),
     CODE_ANNOTATION_NOT_FOUND(40009, "代码批注不存在"),
+    EXTERNAL_IMPORT_TARGET_NOT_FOUND(40010, "题库中不存在该官方题目，外部导入不能新建题目"),
     INTERNAL_ERROR(50000, "服务暂时不可用");
 
     private final int code;

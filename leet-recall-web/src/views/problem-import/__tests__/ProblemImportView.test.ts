@@ -177,7 +177,8 @@ describe('ProblemImportView', () => {
     expect(wrapper.get('[data-test="json-file-picker"]').text()).toContain('选择 JSON 文件')
     expect(wrapper.get('details.preview pre').text()).toContain('完整导入规则（必须遵守）')
     expect(wrapper.get('details.preview pre').text()).toContain('至少有 1 个唯一 `{{blank_n}}`')
-    expect(wrapper.get('details.preview pre').text()).toContain('额外字段不会阻断')
+    expect(wrapper.get('details.preview pre').text()).toContain('普通未定义字段不会参与导入')
+    expect(wrapper.get('details.preview pre').text()).toContain('官方中文题面（只读参考材料，不要改写或回传）')
   })
 
   it('reads a selected JSON file locally and replaces the pasted JSON without submitting it', async () => {

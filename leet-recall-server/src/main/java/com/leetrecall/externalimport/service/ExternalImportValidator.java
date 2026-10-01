@@ -11,7 +11,7 @@ import com.leetrecall.common.enums.Language;
 import com.leetrecall.externalimport.model.ExternalImportPayload;
 import com.leetrecall.hot100.model.Hot100Manifest;
 import com.leetrecall.hot100.model.Hot100OfficialSource;
-import com.leetrecall.importdata.dto.ProblemCreateDTO;
+import com.leetrecall.importdata.dto.ProblemLearningMaterialsImportDTO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -26,15 +26,15 @@ import java.util.regex.Pattern;
 @Component
 @RequiredArgsConstructor
 public class ExternalImportValidator {
-    private static final Set<String> ROOT_FIELDS = Set.of("leetcodeNumber", "title", "difficulty", "descriptionMarkdown", "noteMarkdown", "tags",
-            "coreIdea", "hint", "mistakes", "fullCode", "keyCode", "recallQuestions", "dictation");
+    private static final Set<String> ROOT_FIELDS = Set.of("leetcodeNumber", "noteMarkdown", "coreIdea", "hint", "mistakes",
+            "fullCode", "keyCode", "recallQuestions", "dictation");
+    private static final Set<String> PROTECTED_OFFICIAL_FIELDS = Set.of("title", "difficulty", "descriptionMarkdown", "tags", "officialTags");
     private static final Set<String> QUESTION_FIELDS = Set.of("question", "answer");
     private static final Set<String> DICTATION_FIELDS = Set.of("language", "templateCode", "answers", "keywords");
     private static final Pattern BLANK_PATTERN = Pattern.compile("\\{\\{([a-z][a-z0-9_]*)}}");
     private static final Pattern CLASS_PATTERN = Pattern.compile("\\bclass\\s+([A-Za-z_$][A-Za-z0-9_$]*)");
     private static final Pattern METHOD_PATTERN = Pattern.compile("\\bpublic\\s+(?:static\\s+)?(?:<[^>]+>\\s*)?[A-Za-z_$][A-Za-z0-9_$<>\\[\\], ?]*\\s+([A-Za-z_$][A-Za-z0-9_$]*)\\s*\\(([^)]*)\\)");
     private static final Pattern FENCE_PATTERN = Pattern.compile("^\\s{0,3}(`{3,}|~{3,})(.*)$");
-    private static final int MAX_DESCRIPTION_LENGTH = 100_000;
     private static final int MAX_NOTE_LENGTH = 100_000;
 
     private final ObjectMapper objectMapper;
@@ -58,6 +58,11 @@ public class ExternalImportValidator {
                     .readTree(raw);
             if (root == null || !root.isObject()) {
                 return new ValidationResult(null, List.of("JSON 根节点必须是对象 { ... }"), false, "");
+            }
+            for (String field : PROTECTED_OFFICIAL_FIELDS) {
+                if (root.has(field)) {
+                    errors.add(field + "：属于官方题目资料，禁止通过外部导入修改；只需提供 leetcodeNumber 和学习资料字段");
+                }
             }
             ExternalImportPayload payload = objectMapper.readerFor(ExternalImportPayload.class)
                     .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
@@ -115,15 +120,7 @@ public class ExternalImportValidator {
         if (!Integer.valueOf(expected.leetcodeNumber()).equals(payload.leetcodeNumber())) {
             errors.add("leetcodeNumber：必须为 " + expected.leetcodeNumber() + "，实际为 " + displayValue(payload.leetcodeNumber()));
         }
-        if (!expected.title().equals(payload.title())) {
-            errors.add("title：必须为“" + expected.title() + "”，实际为 " + displayValue(payload.title()));
-        }
-        if (expected.difficulty() != payload.difficulty()) {
-            errors.add("difficulty：必须为 " + expected.difficulty() + "，实际为 " + displayValue(payload.difficulty()));
-        }
-        validateDescriptionMarkdown(payload.descriptionMarkdown(), errors);
         validateNoteMarkdown(payload.noteMarkdown(), errors);
-        validateTextList(payload.tags(), 50, "tags", errors);
         required(payload.coreIdea(), "缺少核心思路", errors);
         required(payload.hint(), "缺少提示", errors);
         validateTextList(payload.mistakes(), 500, "mistakes", errors);
@@ -142,15 +139,22 @@ public class ExternalImportValidator {
         return new ValidationResult(payload, List.copyOf(errors), compileResult.passed(), compileResult.output());
     }
 
-    public ProblemCreateDTO toProblemCreate(ExternalImportPayload payload) {
-        return new ProblemCreateDTO(payload.leetcodeNumber(), payload.title(), payload.difficulty(), payload.descriptionMarkdown(),
-                payload.noteMarkdown(), payload.tags(), payload.coreIdea(), payload.hint(), payload.mistakes(), payload.fullCode(), payload.keyCode(),
-                payload.recallQuestions().stream().map(ExternalImportPayload.RecallQuestion::question).toList(),
-                payload.dictation().templateCode(), payload.dictation().answers(), payload.dictation().keywords());
-    }
-
-    public List<String> recallAnswers(ExternalImportPayload payload) {
-        return payload.recallQuestions().stream().map(ExternalImportPayload.RecallQuestion::answer).toList();
+    public ProblemLearningMaterialsImportDTO toLearningMaterials(ExternalImportPayload payload) {
+        return new ProblemLearningMaterialsImportDTO(
+                payload.leetcodeNumber(),
+                payload.noteMarkdown(),
+                payload.coreIdea(),
+                payload.hint(),
+                payload.mistakes(),
+                payload.fullCode(),
+                payload.keyCode(),
+                payload.recallQuestions().stream()
+                        .map(question -> new ProblemLearningMaterialsImportDTO.RecallQuestion(question.question(), question.answer()))
+                        .toList(),
+                payload.dictation().templateCode(),
+                payload.dictation().answers(),
+                payload.dictation().keywords()
+        );
     }
 
     private void copyFields(ObjectNode source, ObjectNode target, Set<String> allowed) {
@@ -325,22 +329,6 @@ public class ExternalImportValidator {
         String detail = exception.getOriginalMessage();
         if (!path.isBlank()) return "JSON 字段 " + path + " 类型不正确：" + detail;
         return "JSON " + location + detail;
-    }
-
-    /**
-     * 题面不再与任务包逐块比对。段落、列表、标题、分隔线和来源链接的增删不会影响
-     * 系统读取 JSON 或 Markdown 渲染，因此允许外部 AI 自由改写；这里只拦截空内容、
-     * 超长内容和未闭合代码围栏这类会让最终页面明显失真的问题。
-     */
-    private void validateDescriptionMarkdown(String markdown, List<String> errors) {
-        if (blank(markdown)) {
-            errors.add("descriptionMarkdown：题目描述不能为空");
-            return;
-        }
-        if (markdown.length() > MAX_DESCRIPTION_LENGTH) {
-            errors.add("descriptionMarkdown：当前 " + markdown.length() + " 字，最多允许 " + MAX_DESCRIPTION_LENGTH + " 字");
-        }
-        validateMarkdownFence(markdown, "descriptionMarkdown", errors);
     }
 
     /** 笔记是可选字段：缺省或全空白视为不导入笔记，只在有内容时按 Markdown 校验。 */

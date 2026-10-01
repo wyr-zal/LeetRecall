@@ -48,12 +48,29 @@ export interface ExternalImportImpact {
   requiresConfirmation: boolean
 }
 
+export interface ExternalImportPayload {
+  leetcodeNumber: number
+  noteMarkdown?: string | null
+  coreIdea: string
+  hint: string
+  mistakes: string[]
+  fullCode: string
+  keyCode: string
+  recallQuestions: Array<{ question: string; answer: string }>
+  dictation: {
+    language: 'JAVA'
+    templateCode: string
+    answers: Record<string, string>
+    keywords: string[]
+  }
+}
+
 export interface ExternalImportDraft {
   id: number
   status: 'INVALID' | 'READY' | 'IMPORTED'
   leetcodeNumber: number
   content?: string | null
-  payload?: Record<string, unknown>
+  payload?: ExternalImportPayload | null
   validationErrors: string[]
   compilePassed?: boolean
   compileOutput?: string

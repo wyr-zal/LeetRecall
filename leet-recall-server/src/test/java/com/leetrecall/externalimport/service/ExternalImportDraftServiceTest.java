@@ -9,7 +9,7 @@ import com.leetrecall.externalimport.model.ExternalImportPayload;
 import com.leetrecall.hot100.model.Hot100Manifest;
 import com.leetrecall.hot100.model.Hot100OfficialSource;
 import com.leetrecall.hot100.service.Hot100ManifestService;
-import com.leetrecall.importdata.dto.ProblemCreateDTO;
+import com.leetrecall.importdata.dto.ProblemLearningMaterialsImportDTO;
 import com.leetrecall.importdata.service.ProblemImportService;
 import com.leetrecall.importdata.vo.ProblemCreatedVO;
 import com.leetrecall.problem.entity.Problem;
@@ -68,7 +68,7 @@ class ExternalImportDraftServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("JSON 尚未通过全部硬校验");
 
-        verify(problemImportService, never()).upsertExternal(any(), any());
+        verify(problemImportService, never()).updateExternalLearningMaterials(any());
         verify(validator, never()).validateRaw(any(), any(), any());
     }
 
@@ -84,32 +84,49 @@ class ExternalImportDraftServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("覆盖已有题目前必须明确确认");
 
-        verify(problemImportService, never()).upsertExternal(any(), any());
+        verify(problemImportService, never()).updateExternalLearningMaterials(any());
+    }
+
+    @Test
+    void rejectsConfirmationWhenTheOfficialProblemDoesNotExist() throws Exception {
+        ExternalImportDraft draft = readyDraft();
+        when(draftMapper.selectById(7L)).thenReturn(draft);
+        when(problemMapper.selectOne(any())).thenReturn(null);
+        readyValidation();
+
+        assertThatThrownBy(() -> service.confirm(7L, true))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("题库中不存在该官方题目，外部导入不能新建题目");
+
+        verify(problemImportService, never()).updateExternalLearningMaterials(any());
+        verify(draftMapper, never()).updateById(any(ExternalImportDraft.class));
     }
 
     @Test
     void importsAReadyDraftAndMarksItImported() throws Exception {
         ExternalImportDraft draft = readyDraft();
+        Problem existing = new Problem(); existing.setId(42L); existing.setLeetcodeNumber(1);
         when(draftMapper.selectById(7L)).thenReturn(draft);
-        when(problemMapper.selectOne(any())).thenReturn(null);
+        when(problemMapper.selectOne(any())).thenReturn(existing);
         readyValidation();
         ExternalImportPayload payload = payload();
-        ProblemCreateDTO create = new ProblemCreateDTO(1, "两数之和", Difficulty.EASY, "题面", null, List.of("数组"),
-                "核心思路", "提示", List.of("易错点一", "易错点二"), "class Solution {}", "class Solution {}",
-                List.of("问题一足够具体", "问题二足够具体", "问题三足够具体"), "class Solution {}", Map.of(), List.of("数组"));
-        when(validator.toProblemCreate(payload)).thenReturn(create);
-        when(validator.recallAnswers(payload)).thenReturn(List.of("答一", "答二", "答三"));
-        when(problemImportService.upsertExternal(create, List.of("答一", "答二", "答三")))
-                .thenReturn(new ProblemCreatedVO(99L, 1, "两数之和"));
+        ProblemLearningMaterialsImportDTO materials = new ProblemLearningMaterialsImportDTO(
+                1, "## 我的笔记", "核心思路", "提示", List.of("易错点一", "易错点二"),
+                "class Solution {}", "class Solution {}",
+                List.of(new ProblemLearningMaterialsImportDTO.RecallQuestion("问题一", "答一")),
+                "class Solution {}", Map.of(), List.of("补数"));
+        when(validator.toLearningMaterials(payload)).thenReturn(materials);
+        when(problemImportService.updateExternalLearningMaterials(materials))
+                .thenReturn(new ProblemCreatedVO(42L, 1, "两数之和"));
 
-        var response = service.confirm(7L, false);
+        var response = service.confirm(7L, true);
 
         assertThat(response.status()).isEqualTo("IMPORTED");
-        assertThat(response.publishedProblemId()).isEqualTo(99L);
+        assertThat(response.publishedProblemId()).isEqualTo(42L);
         ArgumentCaptor<ExternalImportDraft> saved = ArgumentCaptor.forClass(ExternalImportDraft.class);
         verify(draftMapper).updateById(saved.capture());
         assertThat(saved.getValue().getConfirmedAt()).isNotNull();
-        assertThat(saved.getValue().getPublishedProblemId()).isEqualTo(99L);
+        assertThat(saved.getValue().getPublishedProblemId()).isEqualTo(42L);
     }
 
     private ExternalImportDraft draft(String status) {
@@ -138,7 +155,7 @@ class ExternalImportDraftServiceTest {
     }
 
     private ExternalImportPayload payload() {
-        return new ExternalImportPayload(1, "两数之和", Difficulty.EASY, "题面", "## 我的笔记", List.of("数组"), "核心思路", "提示",
+        return new ExternalImportPayload(1, "## 我的笔记", "核心思路", "提示",
                 List.of("易错点一", "易错点二"), "class Solution {}", "class Solution {}",
                 List.of(new ExternalImportPayload.RecallQuestion("问题一足够具体", "答一"), new ExternalImportPayload.RecallQuestion("问题二足够具体", "答二"), new ExternalImportPayload.RecallQuestion("问题三足够具体", "答三")),
                 new ExternalImportPayload.Dictation("JAVA", "class Solution {}", Map.of(), List.of("数组")));

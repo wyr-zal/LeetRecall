@@ -43,6 +43,17 @@ class ExternalImportValidatorTest {
     }
 
     @Test
+    void rejectsPayloadForDifferentLeetcodeNumber() {
+        Map<String, Object> payload = validPayload();
+        payload.put("leetcodeNumber", 2);
+
+        var result = validator.validateRaw(write(payload), expected, official);
+
+        assertThat(result.ready()).isFalse();
+        assertThat(result.errors()).anyMatch(error -> error.startsWith("leetcodeNumber：必须为 1，实际为") && error.contains("2"));
+    }
+
+    @Test
     void ignoresExtraFieldsAndAllowsContentStyleVariations() {
         Map<String, Object> payload = validPayload();
         payload.put("sourceRefs", List.of("S1"));
@@ -63,12 +74,15 @@ class ExternalImportValidatorTest {
         Map<String, Object> payload = validPayload();
         payload.put("sourceUrl", "https://example.com/private-source");
         payload.put("provider", "external-model");
+        payload.put("title", "官方标题");
+        payload.put("descriptionMarkdown", "官方题面");
+        payload.put("tags", List.of("官方标签"));
 
         String sanitized = validator.sanitizeForStorage(write(payload));
 
-        assertThat(sanitized).doesNotContain("private-source").doesNotContain("external-model");
+        assertThat(sanitized).doesNotContain("private-source", "external-model", "官方标题", "官方题面", "官方标签");
         assertThat(objectMapper.readTree(sanitized).fieldNames())
-                .toIterable().doesNotContain("sourceUrl", "provider");
+                .toIterable().doesNotContain("sourceUrl", "provider", "title", "descriptionMarkdown", "tags");
     }
 
     @Test
@@ -120,96 +134,23 @@ class ExternalImportValidatorTest {
     }
 
     @Test
-    void acceptsRewordedDescriptionWhenMarkdownStructureMatches() {
-        Hot100OfficialSource.OfficialProblem structuredOfficial = officialWithDescription("""
-                # 题目说明
-
-                给定一个数组，请求出答案。[原题](https://leetcode.cn/problems/two-sum/)
-
-                - 第一个条件
-                - 第二个条件 [参考](https://example.com/rule)
-
-                ```text
-                示例输入
-                ```
-
-                ---
-                """);
+    void rejectsLegacyOfficialQuestionFieldsWithClearErrors() {
         Map<String, Object> payload = validPayload();
-        payload.put("descriptionMarkdown", """
-                # 另一种表述
+        Map<String, Object> legacyFields = new LinkedHashMap<>();
+        legacyFields.put("title", "两数之和");
+        legacyFields.put("difficulty", "EASY");
+        legacyFields.put("descriptionMarkdown", "旧 JSON 中回传的题面");
+        legacyFields.put("tags", List.of("数组"));
+        legacyFields.put("officialTags", List.of("数组"));
 
-                给你一组数，找出符合要求的结果。[题目链接](https://anywhere.invalid/problem)
+        for (Map.Entry<String, Object> field : legacyFields.entrySet()) {
+            payload.put(field.getKey(), field.getValue());
+            var result = validator.validateRaw(write(payload), expected, official);
 
-                - 改写后的条件
-                - 仍保留一个链接 [说明](https://anywhere.invalid/rule)
-
-                ```text
-                任意示例文本
-                ```
-
-                ---
-                """);
-
-        var result = validator.validateRaw(write(payload), expected, structuredOfficial);
-
-        assertThat(result.errors()).noneMatch(error -> error.contains("Markdown 排版结构"));
-    }
-
-    @Test
-    void acceptsDescriptionWhenNonEssentialMarkdownStructureChanges() {
-        Hot100OfficialSource.OfficialProblem structuredOfficial = officialWithDescription("""
-                这是说明，[原题](https://leetcode.cn/problems/two-sum/)。
-
-                ---
-
-                - 第一项
-                - 第二项
-                """);
-        Map<String, Object> payload = validPayload();
-        payload.put("descriptionMarkdown", """
-                这是改写后的说明，不保留链接，文字可自由改写。
-
-                - 只保留了一项
-                """);
-
-        var result = validator.validateRaw(write(payload), expected, structuredOfficial);
-
-        assertThat(result.ready()).describedAs(result.errors().toString()).isTrue();
-        assertThat(result.errors()).noneMatch(error -> error.contains("descriptionMarkdown"));
-    }
-
-    @Test
-    void rejectsUnclosedDescriptionFenceWithExactLineNumber() {
-        Map<String, Object> payload = validPayload();
-        payload.put("descriptionMarkdown", """
-                题目说明
-
-                ```text
-                输入：nums = [2, 7]
-                输出：[0, 1]
-                """);
-
-        var result = validator.validateRaw(write(payload), expected, official);
-
-        assertThat(result.ready()).isFalse();
-        assertThat(result.errors()).contains("descriptionMarkdown 第 3 行：代码围栏 ``` 未闭合，请在代码块末尾补上同类型围栏");
-    }
-
-    @Test
-    void reportsExpectedAndActualValuesForLockedFields() {
-        Map<String, Object> payload = validPayload();
-        payload.put("leetcodeNumber", 2);
-        payload.put("title", "错误标题");
-        payload.put("difficulty", "HARD");
-
-        var result = validator.validateRaw(write(payload), expected, official);
-
-        assertThat(result.errors()).contains(
-                "leetcodeNumber：必须为 1，实际为 “2”",
-                "title：必须为“两数之和”，实际为 “错误标题”",
-                "difficulty：必须为 EASY，实际为 “HARD”"
-        );
+            assertThat(result.ready()).as("field %s", field.getKey()).isFalse();
+            assertThat(result.errors()).anyMatch(error -> error.startsWith(field.getKey() + "：属于官方题目资料"));
+            payload.remove(field.getKey());
+        }
     }
 
     @Test
@@ -320,12 +261,6 @@ class ExternalImportValidatorTest {
         assertThat(result.errors()).anyMatch(error -> error.startsWith("noteMarkdown：当前 100001 字"));
     }
 
-    private Hot100OfficialSource.OfficialProblem officialWithDescription(String description) {
-        return new Hot100OfficialSource.OfficialProblem("哈希", 1, "两数之和", Difficulty.EASY,
-                "https://leetcode.cn/problems/two-sum/", 1, description, List.of("数组"),
-                "class Solution { public int[] twoSum(int[] nums, int target) { } }");
-    }
-
     @Test
     void rejectsMoreThanFiveRecallQuestions() {
         Map<String, Object> payload = validPayload();
@@ -344,11 +279,7 @@ class ExternalImportValidatorTest {
     private Map<String, Object> validPayload() {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("leetcodeNumber", 1);
-        payload.put("title", "两数之和");
-        payload.put("difficulty", "EASY");
-        payload.put("descriptionMarkdown", "题面原文");
         payload.put("noteMarkdown", "## 我的笔记\n哈希表存值到下标的映射。");
-        payload.put("tags", List.of("数组"));
         payload.put("coreIdea", "遍历时维护补数映射，并说明首次命中即正确的原因。");
         payload.put("hint", "先判断补数再写入当前值。");
         payload.put("mistakes", List.of("不能在查询前写入当前下标，否则会复用同一元素", "结果为空时要保持题目要求的返回类型"));

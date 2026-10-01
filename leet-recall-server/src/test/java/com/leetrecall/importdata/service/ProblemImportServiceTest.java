@@ -1,22 +1,17 @@
 package com.leetrecall.importdata.service;
 
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leetrecall.common.enums.Difficulty;
-import com.leetrecall.hot100.model.Hot100Manifest;
-import com.leetrecall.hot100.service.Hot100ManifestService;
 import com.leetrecall.dictation.mapper.DictationTemplateMapper;
-import com.leetrecall.importdata.dto.ProblemCreateDTO;
+import com.leetrecall.importdata.dto.ProblemLearningMaterialsImportDTO;
 import com.leetrecall.problem.entity.Problem;
 import com.leetrecall.problem.entity.ProblemNote;
 import com.leetrecall.problem.entity.RecallQuestion;
-import com.leetrecall.problem.entity.Tag;
 import com.leetrecall.problem.mapper.ProblemMapper;
 import com.leetrecall.problem.mapper.ProblemMistakeMapper;
 import com.leetrecall.problem.mapper.ProblemNoteMapper;
-import com.leetrecall.problem.mapper.ProblemTagMapper;
 import com.leetrecall.problem.mapper.RecallQuestionMapper;
-import com.leetrecall.problem.mapper.TagMapper;
-import com.leetrecall.review.mapper.ProblemProgressMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,28 +23,24 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @ExtendWith(MockitoExtension.class)
 class ProblemImportServiceTest {
 
     @Mock private ProblemMapper problemMapper;
-    @Mock private TagMapper tagMapper;
-    @Mock private ProblemTagMapper problemTagMapper;
     @Mock private RecallQuestionMapper recallQuestionMapper;
     @Mock private ProblemMistakeMapper problemMistakeMapper;
     @Mock private DictationTemplateMapper dictationTemplateMapper;
-    @Mock private ProblemProgressMapper problemProgressMapper;
     @Mock private ProblemNoteMapper problemNoteMapper;
-    @Mock private Hot100ManifestService hot100ManifestService;
 
     private ProblemImportService service;
 
@@ -58,78 +49,64 @@ class ProblemImportServiceTest {
         Clock clock = Clock.fixed(Instant.parse("2026-07-28T02:00:00Z"), ZoneId.of("Asia/Shanghai"));
         service = new ProblemImportService(
                 problemMapper,
-                tagMapper,
-                problemTagMapper,
                 recallQuestionMapper,
                 problemMistakeMapper,
                 dictationTemplateMapper,
-                problemProgressMapper,
                 problemNoteMapper,
                 new ObjectMapper(),
-                clock,
-                hot100ManifestService
+                clock
         );
     }
 
     @Test
-    void shouldPersistRecallAnswersAndCreateNewProgress() {
+    void doesNotCreateAnImportTargetWhenOfficialProblemIsMissing() {
         when(problemMapper.selectOne(any())).thenReturn(null);
-        when(hot100ManifestService.findByNumber(1)).thenReturn(new Hot100Manifest.Hot100Problem(
-                1, "哈希", 1, "两数之和", Difficulty.EASY,
-                "https://leetcode.cn/problems/two-sum/"
-        ));
-        doAnswer(invocation -> {
-            invocation.getArgument(0, Problem.class).setId(99L);
-            return 1;
-        }).when(problemMapper).insert(any(Problem.class));
-        Tag tag = new Tag();
-        tag.setId(7L);
-        tag.setName("哈希表");
-        when(tagMapper.selectOne(any())).thenReturn(tag);
 
-        service.upsertExternal(request(), List.of(
-                "避免使用同一个元素两次。",
-                "保存数字到下标的映射。",
-                "时间 O(n)，空间 O(n)。"
-        ));
+        assertThatThrownBy(() -> service.updateExternalLearningMaterials(request(null)))
+                .hasMessage("题库中不存在该官方题目，外部导入不能新建题目");
 
-        ArgumentCaptor<RecallQuestion> questions = ArgumentCaptor.forClass(RecallQuestion.class);
-        verify(recallQuestionMapper, times(3)).insert(questions.capture());
-        ArgumentCaptor<Problem> savedProblem = ArgumentCaptor.forClass(Problem.class);
-        verify(problemMapper).insert(savedProblem.capture());
-        assertThat(savedProblem.getValue().getHot100Order()).isEqualTo(1);
-        assertThat(questions.getAllValues())
-                .extracting(RecallQuestion::getAnswerText)
-                .containsExactly(
-                        "避免使用同一个元素两次。",
-                        "保存数字到下标的映射。",
-                        "时间 O(n)，空间 O(n)。"
-                );
+        verify(problemMapper, never()).insert(any(Problem.class));
+        verify(problemMapper, never()).updateById(any(Problem.class));
+        verify(recallQuestionMapper, never()).delete(any());
+        verify(problemMistakeMapper, never()).delete(any());
+        verify(dictationTemplateMapper, never()).delete(any());
+        verify(problemNoteMapper, never()).selectOne(any());
     }
 
     @Test
-    void shouldReplaceOnlyContentChildrenWhenProblemAlreadyExists() {
+    void shouldReplaceOnlyLearningMaterialsAndPreserveOfficialFields() {
         Problem existing = new Problem();
         existing.setId(42L);
         existing.setLeetcodeNumber(1);
+        existing.setHot100Order(1);
+        existing.setTitle("官方标题");
+        existing.setDifficulty(Difficulty.EASY);
+        existing.setDescriptionMarkdown("官方题面");
+        existing.setStatus(1);
         when(problemMapper.selectOne(any())).thenReturn(existing);
-        when(hot100ManifestService.findByNumber(1)).thenReturn(new Hot100Manifest.Hot100Problem(
-                1, "哈希", 1, "两数之和", Difficulty.EASY,
-                "https://leetcode.cn/problems/two-sum/"
-        ));
-        Tag tag = new Tag(); tag.setId(7L); tag.setName("哈希表");
-        when(tagMapper.selectOne(any())).thenReturn(tag);
 
-        var result = service.upsertExternal(request(), List.of("答一", "答二", "答三"));
+        var result = service.updateExternalLearningMaterials(request(null));
 
         assertThat(result.problemId()).isEqualTo(42L);
-        verify(problemMapper).updateById(existing);
+        assertThat(existing.getTitle()).isEqualTo("官方标题");
+        assertThat(existing.getDifficulty()).isEqualTo(Difficulty.EASY);
+        assertThat(existing.getDescriptionMarkdown()).isEqualTo("官方题面");
+        assertThat(existing.getHot100Order()).isEqualTo(1);
+        assertThat(existing.getStatus()).isEqualTo(1);
+        ArgumentCaptor<UpdateWrapper<Problem>> update = ArgumentCaptor.forClass(UpdateWrapper.class);
+        verify(problemMapper).update(isNull(), update.capture());
+        assertThat(update.getValue().getSqlSet())
+                .contains("core_idea", "hint", "key_code", "full_code", "updated_at")
+                .doesNotContain("title", "difficulty", "description_markdown", "hot100_order", "status");
         verify(problemMapper, never()).insert(any(Problem.class));
+        verify(problemMapper, never()).updateById(any(Problem.class));
         verify(recallQuestionMapper).delete(any());
         verify(problemMistakeMapper).delete(any());
-        verify(problemTagMapper).delete(any());
         verify(dictationTemplateMapper).delete(any());
-        verify(problemProgressMapper, never()).insert(any(com.leetrecall.review.entity.ProblemProgress.class));
+        ArgumentCaptor<RecallQuestion> questions = ArgumentCaptor.forClass(RecallQuestion.class);
+        verify(recallQuestionMapper, times(3)).insert(questions.capture());
+        assertThat(questions.getAllValues()).extracting(RecallQuestion::getAnswerText)
+                .containsExactly("答一", "答二", "答三");
     }
 
     @Test
@@ -138,15 +115,9 @@ class ProblemImportServiceTest {
         existing.setId(42L);
         existing.setLeetcodeNumber(1);
         when(problemMapper.selectOne(any())).thenReturn(existing);
-        when(hot100ManifestService.findByNumber(1)).thenReturn(new Hot100Manifest.Hot100Problem(
-                1, "哈希", 1, "两数之和", Difficulty.EASY,
-                "https://leetcode.cn/problems/two-sum/"
-        ));
-        Tag tag = new Tag(); tag.setId(7L); tag.setName("哈希表");
-        when(tagMapper.selectOne(any())).thenReturn(tag);
         when(problemNoteMapper.selectOne(any())).thenReturn(null);
 
-        service.upsertExternal(request("## 我的笔记\n先查补数再写入。"), List.of("答一", "答二", "答三"));
+        service.updateExternalLearningMaterials(request("## 我的笔记\n先查补数再写入。"));
 
         ArgumentCaptor<ProblemNote> saved = ArgumentCaptor.forClass(ProblemNote.class);
         verify(problemNoteMapper).insert(saved.capture());
@@ -161,19 +132,13 @@ class ProblemImportServiceTest {
         existing.setId(42L);
         existing.setLeetcodeNumber(1);
         when(problemMapper.selectOne(any())).thenReturn(existing);
-        when(hot100ManifestService.findByNumber(1)).thenReturn(new Hot100Manifest.Hot100Problem(
-                1, "哈希", 1, "两数之和", Difficulty.EASY,
-                "https://leetcode.cn/problems/two-sum/"
-        ));
-        Tag tag = new Tag(); tag.setId(7L); tag.setName("哈希表");
-        when(tagMapper.selectOne(any())).thenReturn(tag);
         ProblemNote handwritten = new ProblemNote();
         handwritten.setId(5L);
         handwritten.setProblemId(42L);
         handwritten.setContentMarkdown("我自己写的笔记");
         when(problemNoteMapper.selectOne(any())).thenReturn(handwritten);
 
-        service.upsertExternal(request("## AI 生成的笔记"), List.of("答一", "答二", "答三"));
+        service.updateExternalLearningMaterials(request("## AI 生成的笔记"));
 
         assertThat(handwritten.getContentMarkdown()).isEqualTo("我自己写的笔记");
         verify(problemNoteMapper, never()).insert(any(ProblemNote.class));
@@ -186,19 +151,13 @@ class ProblemImportServiceTest {
         existing.setId(42L);
         existing.setLeetcodeNumber(1);
         when(problemMapper.selectOne(any())).thenReturn(existing);
-        when(hot100ManifestService.findByNumber(1)).thenReturn(new Hot100Manifest.Hot100Problem(
-                1, "哈希", 1, "两数之和", Difficulty.EASY,
-                "https://leetcode.cn/problems/two-sum/"
-        ));
-        Tag tag = new Tag(); tag.setId(7L); tag.setName("哈希表");
-        when(tagMapper.selectOne(any())).thenReturn(tag);
         ProblemNote blankNote = new ProblemNote();
         blankNote.setId(5L);
         blankNote.setProblemId(42L);
         blankNote.setContentMarkdown("   ");
         when(problemNoteMapper.selectOne(any())).thenReturn(blankNote);
 
-        service.upsertExternal(request("## AI 生成的笔记"), List.of("答一", "答二", "答三"));
+        service.updateExternalLearningMaterials(request("## AI 生成的笔记"));
 
         verify(problemNoteMapper).updateById(blankNote);
         assertThat(blankNote.getContentMarkdown()).isEqualTo("## AI 生成的笔记");
@@ -206,46 +165,35 @@ class ProblemImportServiceTest {
 
     @Test
     void shouldNotTouchTheNoteTableWhenTheJsonHasNoNote() {
-        when(problemMapper.selectOne(any())).thenReturn(null);
-        when(hot100ManifestService.findByNumber(1)).thenReturn(new Hot100Manifest.Hot100Problem(
-                1, "哈希", 1, "两数之和", Difficulty.EASY,
-                "https://leetcode.cn/problems/two-sum/"
-        ));
-        doAnswer(invocation -> {
-            invocation.getArgument(0, Problem.class).setId(99L);
-            return 1;
-        }).when(problemMapper).insert(any(Problem.class));
-        Tag tag = new Tag(); tag.setId(7L); tag.setName("哈希表");
-        when(tagMapper.selectOne(any())).thenReturn(tag);
+        Problem existing = new Problem();
+        existing.setId(42L);
+        existing.setLeetcodeNumber(1);
+        when(problemMapper.selectOne(any())).thenReturn(existing);
 
-        service.upsertExternal(request(), List.of("答一", "答二", "答三"));
+        service.updateExternalLearningMaterials(request(null));
 
         verify(problemNoteMapper, never()).selectOne(any());
         verify(problemNoteMapper, never()).insert(any(ProblemNote.class));
         verify(problemNoteMapper, never()).updateById(any(ProblemNote.class));
     }
 
-    private ProblemCreateDTO request() {
-        return request(null);
-    }
-
-    private ProblemCreateDTO request(String noteMarkdown) {
-        return new ProblemCreateDTO(
+    private ProblemLearningMaterialsImportDTO request(String noteMarkdown) {
+        return new ProblemLearningMaterialsImportDTO(
                 1,
-                "两数之和",
-                Difficulty.EASY,
-                "给定一个整数数组和目标值，返回两个下标。",
                 noteMarkdown,
-                List.of("哈希表"),
                 "遍历时查找补数。",
                 "先查再存。",
                 List.of("不能复用同一元素"),
                 "class Solution {}",
                 "return new int[] {};",
-                List.of("问题一", "问题二", "问题三"),
+                List.of(
+                        new ProblemLearningMaterialsImportDTO.RecallQuestion("问题一", "答一"),
+                        new ProblemLearningMaterialsImportDTO.RecallQuestion("问题二", "答二"),
+                        new ProblemLearningMaterialsImportDTO.RecallQuestion("问题三", "答三")
+                ),
                 "return {{blank_1}};",
-                Map.of("blank_1", "result"),
-                List.of("哈希表")
+                java.util.Map.of("blank_1", "result"),
+                List.of("补数")
         );
     }
 }

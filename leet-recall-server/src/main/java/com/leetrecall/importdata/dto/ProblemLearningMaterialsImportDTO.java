@@ -1,9 +1,10 @@
-package com.leetrecall.externalimport.model;
+package com.leetrecall.importdata.dto;
 
 import java.util.List;
 import java.util.Map;
 
-public record ExternalImportPayload(
+/** External learning materials that may be updated without changing official problem data. */
+public record ProblemLearningMaterialsImportDTO(
         Integer leetcodeNumber,
         String noteMarkdown,
         String coreIdea,
@@ -12,8 +13,9 @@ public record ExternalImportPayload(
         String fullCode,
         String keyCode,
         List<RecallQuestion> recallQuestions,
-        Dictation dictation
+        String dictationTemplate,
+        Map<String, String> dictationAnswers,
+        List<String> keywords
 ) {
     public record RecallQuestion(String question, String answer) { }
-    public record Dictation(String language, String templateCode, Map<String, String> answers, List<String> keywords) { }
 }

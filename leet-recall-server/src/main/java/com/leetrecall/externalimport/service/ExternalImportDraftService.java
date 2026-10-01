@@ -94,8 +94,9 @@ public class ExternalImportDraftService {
             throw ErrorCode.EXTERNAL_IMPORT_NOT_READY.exception();
         }
         Problem existing = existingProblem(draft.getLeetcodeNumber());
-        if (existing != null && !confirmOverwrite) throw ErrorCode.EXTERNAL_IMPORT_OVERWRITE_CONFIRMATION_REQUIRED.exception();
-        ProblemCreatedVO created = problemImportService.upsertExternal(validator.toProblemCreate(result.payload()), validator.recallAnswers(result.payload()));
+        if (existing == null) throw ErrorCode.EXTERNAL_IMPORT_TARGET_NOT_FOUND.exception();
+        if (!confirmOverwrite) throw ErrorCode.EXTERNAL_IMPORT_OVERWRITE_CONFIRMATION_REQUIRED.exception();
+        ProblemCreatedVO created = problemImportService.updateExternalLearningMaterials(validator.toLearningMaterials(result.payload()));
         LocalDateTime now = LocalDateTime.now(applicationClock);
         draft.setStatus("IMPORTED"); draft.setPublishedProblemId(created.problemId()); draft.setPublishedAt(now); draft.setConfirmedAt(now);
         draft.setUpdatedAt(now); draftMapper.updateById(draft);
@@ -121,9 +122,14 @@ public class ExternalImportDraftService {
 
     private ExternalImportImpactVO impact(Integer number) {
         Problem problem = existingProblem(number);
-        return new ExternalImportImpactVO(problem != null, problem == null ? null : problem.getId(),
-                List.of("题目 ID", "学习进度", "笔记（已有内容不会被覆盖）", "复习记录", "历史默写记录"),
-                List.of("题面、核心思路、提示、易错点、回忆问答、Java 代码、当前默写模板"), problem != null);
+        if (problem == null) {
+            return new ExternalImportImpactVO(false, null,
+                    List.of("无；题库中没有该官方题目"),
+                    List.of("无；确认导入会被拒绝，且不会新建题目"), false);
+        }
+        return new ExternalImportImpactVO(true, problem.getId(),
+                List.of("题目 ID", "官方题号、标题、难度、题面与标签", "学习进度", "已有非空笔记", "复习记录", "历史默写记录"),
+                List.of("核心思路、提示、易错点、回忆问答、Java 代码、当前默写模板", "空白笔记仅在首次导入时填充"), true);
     }
 
     private List<String> readErrors(String json) {

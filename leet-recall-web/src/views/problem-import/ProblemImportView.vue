@@ -76,7 +76,7 @@ const browserProblems = computed(() => {
 })
 const documentText = computed(() => {
   if (!task.value) return ''
-  return `${task.value.instructionMarkdown}\n\n## 完整导入规则（必须遵守）\n\n${importSpec}\n\n## 用户补充资料\n\n### 我的题解\n${solutionNotes.value || '（请填写你自己的题解、推导或参考文章摘要）'}\n\n### 我的难点\n${difficultyNotes.value || '（请填写最容易卡住的步骤、边界或 API）'}\n\n## 本题中文题面\n${task.value.descriptionMarkdown}\n\n## 本题官方 Java 起始签名\n\`\`\`java\n${task.value.javaStarterCode}\n\`\`\`\n\n## 本题 JSON 示例\n\`\`\`json\n${task.value.exampleJson}\n\`\`\`\n`
+  return `${task.value.instructionMarkdown}\n\n## 完整导入规则（必须遵守）\n\n${importSpec}\n\n## 用户补充资料\n\n### 我的题解\n${solutionNotes.value || '（请填写你自己的题解、推导或参考文章摘要）'}\n\n### 我的难点\n${difficultyNotes.value || '（请填写最容易卡住的步骤、边界或 API）'}\n\n## 官方中文题面（只读参考材料，不要改写或回传）\n${task.value.descriptionMarkdown}\n\n## 官方 Java 起始签名（只读参考）\n\`\`\`java\n${task.value.javaStarterCode}\n\`\`\`\n\n## 学习资料 JSON 示例\n\`\`\`json\n${task.value.exampleJson}\n\`\`\`\n`
 })
 const validJson = computed(() => {
   try { JSON.parse(json.value); return json.value.trim().startsWith('{') }
@@ -408,8 +408,8 @@ function downloadJsonExample(): void {
       <div v-if="draft" class="draft-result">
         <div class="status-line"><strong>状态：{{ draft.status }}</strong><span v-if="draft.compilePassed" class="passed">Java 21 编译通过</span><span v-else class="failed">Java 编译未通过</span></div>
         <ul v-if="draft.validationErrors.length" class="errors"><li v-for="item in draft.validationErrors" :key="item">{{ item }}</li></ul>
-        <div class="impact"><strong>{{ draft.impact.overwriteExisting ? '覆盖影响' : '新题导入' }}</strong><span>保留：{{ draft.impact.preserved.join('、') }}</span><span>替换：{{ draft.impact.replaced.join('、') }}</span></div>
-        <button class="primary confirm" :disabled="!ready || confirming" @click="confirmImport"><CheckCircle2 :size="17" />{{ confirming ? '导入中…' : draft.impact.requiresConfirmation ? '确认覆盖并导入' : '确认导入' }}</button>
+        <div class="impact"><strong>{{ draft.impact.overwriteExisting ? '学习资料覆盖影响' : '无法导入' }}</strong><span>保留：{{ draft.impact.preserved.join('、') }}</span><span>替换：{{ draft.impact.replaced.join('、') }}</span></div>
+        <button class="primary confirm" :disabled="!ready || !draft.impact.overwriteExisting || confirming" @click="confirmImport"><CheckCircle2 :size="17" />{{ confirming ? '导入中…' : draft.impact.overwriteExisting ? '确认更新学习资料' : '官方题目不存在' }}</button>
       </div>
     </section>
 
@@ -422,9 +422,9 @@ function downloadJsonExample(): void {
 
     <ConfirmDialog
       :open="overwriteDialogOpen"
-      title="确认覆盖并导入"
-      :description="`题号 ${draft?.leetcodeNumber ?? ''} 已存在。将替换当前题面、问答和默写模板，但保留学习进度、笔记、复习记录和历史默写记录。JSON 里的笔记只在这道题还没有笔记时写入。确定继续吗？`"
-      confirm-label="确认覆盖并导入"
+      title="确认更新学习资料"
+      :description="`题号 ${draft?.leetcodeNumber ?? ''} 已对应官方题目。本次只替换学习资料，保留题目 ID、官方标题、难度、题面、标签、学习进度、已有笔记、复习记录和历史默写记录；JSON 笔记只在现有笔记为空时填入。确定继续吗？`"
+      confirm-label="确认更新学习资料"
       @confirm="runImport"
       @cancel="overwriteDialogOpen = false"
     />

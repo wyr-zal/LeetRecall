@@ -32,8 +32,8 @@ import java.util.regex.Pattern;
 /**
  * 快速复习页「编辑模式」的读写服务。
  *
- * 刻意不复用 ProblemImportService.upsertExternal：那条路径是整题覆盖语义，会删除并重建
- * recall_question / problem_mistake / problem_tag / dictation_template，使 questionId 重置，
+ * 刻意不复用 ProblemImportService.updateExternalLearningMaterials：外部导入会整体替换
+ * recall_question / problem_mistake / dictation_template，使 questionId 重置，
  * 从而废掉 localStorage 草稿与 review_record.user_recall_json 的关联。
  *
  * 本服务只持有题目内容相关的 Mapper，不接触 problem_note、problem_progress、review_record、
