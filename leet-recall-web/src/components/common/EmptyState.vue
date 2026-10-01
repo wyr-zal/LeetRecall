@@ -36,7 +36,7 @@ defineEmits<{ action: [] }>()
 
 h2 {
   margin: 0 0 20px;
-  font-size: 18px;
+  font-size: calc(18px * var(--ui-font-ratio));
   font-weight: 580;
 }
 

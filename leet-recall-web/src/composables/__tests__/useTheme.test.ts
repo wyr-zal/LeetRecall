@@ -10,6 +10,8 @@ describe('theme preference', () => {
   })
 
   it('applies and persists the selected light theme', async () => {
+    themeMode.value = 'dark'
+    await nextTick()
     themeMode.value = 'light'
     await nextTick()
 

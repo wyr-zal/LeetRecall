@@ -61,7 +61,7 @@ watch(() => props.open, async (open) => {
   box-shadow: var(--shadow-high);
 }
 
-h2 { margin: 0 0 9px; font-size: 18px; }
+h2 { margin: 0 0 9px; font-size: calc(18px * var(--ui-font-ratio)); }
 p { margin: 0; color: var(--text-secondary); line-height: 1.65; }
 .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
 button { min-width: 82px; min-height: 40px; border-radius: 8px; }

@@ -93,9 +93,9 @@ function statusLabel(item: DictationQueueItem): string {
   box-shadow: var(--shadow-high);
 }
 .picker-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.picker-header h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 5px; font-size: 17px; }
+.picker-header h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 5px; font-size: calc(17px * var(--ui-font-ratio)); }
 .picker-header h2 svg { color: var(--primary); }
-.picker-header p { margin: 0; color: var(--text-muted); font-size: 12px; }
+.picker-header p { margin: 0; color: var(--text-muted); font-size: calc(12px * var(--ui-font-ratio)); }
 .picker-header button {
   display: grid;
   width: 38px;
@@ -128,7 +128,7 @@ function statusLabel(item: DictationQueueItem): string {
   min-height: 40px;
   padding: 7px 10px;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: calc(13px * var(--ui-font-ratio));
   text-align: left;
   border: 0;
   border-radius: 6px;
@@ -139,8 +139,8 @@ function statusLabel(item: DictationQueueItem): string {
 .picker-list button.current { color: var(--text-primary); background: var(--bg-card-hover); box-shadow: inset 2px 0 0 var(--primary); }
 .picker-list button.current > span:first-of-type { color: var(--text-primary); }
 .picker-list button.done > span:first-of-type { color: var(--success); }
-.picker-list .status { color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.picker-list .empty { padding: 18px 10px; margin: 0; color: var(--text-muted); font-size: 13px; }
+.picker-list .status { color: var(--text-muted); font-size: calc(11px * var(--ui-font-ratio)); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.picker-list .empty { padding: 18px 10px; margin: 0; color: var(--text-muted); font-size: calc(13px * var(--ui-font-ratio)); }
 
 @media (max-width: 560px) {
   .picker-backdrop {

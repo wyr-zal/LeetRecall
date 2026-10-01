@@ -24,9 +24,12 @@ import com.leetrecall.dictation.vo.DictationSubmitVO;
 import com.leetrecall.dictation.vo.TodayDictationQueueVO;
 import com.leetrecall.problem.entity.Problem;
 import com.leetrecall.problem.entity.ProblemMistake;
+import com.leetrecall.problem.entity.RecallQuestion;
 import com.leetrecall.problem.mapper.ProblemMapper;
 import com.leetrecall.problem.mapper.ProblemMistakeMapper;
 import com.leetrecall.problem.mapper.ProblemTagMapper;
+import com.leetrecall.problem.mapper.RecallQuestionMapper;
+import com.leetrecall.review.vo.RecallQuestionVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,6 +57,7 @@ public class DictationService {
     private final ProblemMapper problemMapper;
     private final ProblemTagMapper problemTagMapper;
     private final ProblemMistakeMapper problemMistakeMapper;
+    private final RecallQuestionMapper recallQuestionMapper;
     private final DictationScorer scorer;
     private final ObjectMapper objectMapper;
     private final Clock applicationClock;
@@ -77,6 +81,17 @@ public class DictationService {
     public DictationProblemDetailVO getProblemDetail(Long problemId) {
         Problem problem = requireProblem(problemId);
         DictationTemplate template = requireTemplate(problemId);
+        List<RecallQuestionVO> recallQuestions = recallQuestionMapper.selectList(
+                        new LambdaQueryWrapper<RecallQuestion>()
+                                .eq(RecallQuestion::getProblemId, problemId)
+                                .orderByAsc(RecallQuestion::getSortOrder)
+                ).stream()
+                .map(question -> new RecallQuestionVO(
+                        question.getId(),
+                        question.getQuestionText(),
+                        question.getAnswerText()
+                ))
+                .toList();
         List<String> mistakes = problemMistakeMapper.selectList(
                         new LambdaQueryWrapper<ProblemMistake>()
                                 .eq(ProblemMistake::getProblemId, problemId)
@@ -89,7 +104,11 @@ public class DictationService {
                 problemId,
                 problem.getLeetcodeNumber(),
                 problem.getTitle(),
+                problem.getDifficulty(),
                 problemTagMapper.selectTagNames(problemId, 2),
+                problem.getDescriptionMarkdown() == null ? "" : problem.getDescriptionMarkdown(),
+                recallQuestions,
+                problem.getCoreIdea() == null ? "" : problem.getCoreIdea(),
                 template.getLanguage(),
                 indentPlaceholders(template.getTemplateCode(), readMap(template.getAnswerJson())),
                 readList(template.getKeywordJson()),

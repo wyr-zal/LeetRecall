@@ -33,7 +33,7 @@ function toggleSidebar(): void {
   --current-sidebar-width: var(--sidebar-width);
   display: grid;
   grid-template-columns: var(--current-sidebar-width) minmax(0, 1fr);
-  min-height: 100dvh;
+  min-height: var(--viewport-height);
   transition: grid-template-columns 180ms ease;
 }
 
@@ -48,7 +48,7 @@ function toggleSidebar(): void {
 }
 
 .app-content {
-  min-height: calc(100dvh - var(--topbar-height));
+  min-height: calc(var(--viewport-height) - var(--topbar-height));
   border-left: 1px solid var(--border-highlight);
 }
 

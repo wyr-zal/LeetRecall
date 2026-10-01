@@ -43,5 +43,5 @@ button > span { display: flex; align-items: center; gap: 8px; }
 button > span svg { color: var(--warning); }
 button > svg { transition: transform 160ms ease; }
 .open button > svg { transform: rotate(180deg); }
-p { margin: 0; padding: 0 15px 15px; color: var(--text-secondary); font-size: 14px; line-height: 1.7; }
+p { margin: 0; padding: 0 15px 15px; color: var(--text-secondary); font-size: calc(14px * var(--ui-font-ratio)); line-height: 1.7; }
 </style>

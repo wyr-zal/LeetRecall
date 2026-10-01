@@ -52,7 +52,7 @@ const updatedLabel = computed(() => {
 
 h1 {
   margin: 0 0 8px;
-  font-size: clamp(19px, 1.65vw, 23px);
+  font-size: clamp(calc(19px * var(--ui-font-ratio)), 1.65vw, calc(23px * var(--ui-font-ratio)));
   font-weight: 680;
   letter-spacing: 0;
   line-height: 1.28;
@@ -68,12 +68,12 @@ h1 span { color: var(--primary); font-weight: 620; }
   gap: 7px;
   margin-left: auto;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--ui-font-ratio));
   white-space: nowrap;
 }
 .source-badge {
   padding: 1px 6px;
-  font-size: 10px;
+  font-size: calc(10px * var(--ui-font-ratio));
   font-weight: 600;
   border: 1px solid var(--border-secondary);
   border-radius: 5px;
@@ -84,7 +84,7 @@ h1 span { color: var(--primary); font-weight: 620; }
 }
 .difficulty {
   padding: 3px 7px;
-  font-size: 10px;
+  font-size: calc(10px * var(--ui-font-ratio));
   font-weight: 700;
   border: 1px solid currentColor;
   border-radius: 5px;

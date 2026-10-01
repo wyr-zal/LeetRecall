@@ -301,8 +301,8 @@ onBeforeUnmount(() => {
   background: var(--bg-input);
 }
 .note-load-error div { display: grid; min-width: 0; gap: 3px; }
-.note-load-error strong { color: var(--danger-strong); font-size: 12px; }
-.note-load-error span { color: var(--text-muted); font-size: 10px; }
+.note-load-error strong { color: var(--danger-strong); font-size: calc(12px * var(--ui-font-ratio)); }
+.note-load-error span { color: var(--text-muted); font-size: calc(10px * var(--ui-font-ratio)); }
 .note-load-error .retry-button { margin-left: auto; flex: 0 0 auto; }
 
 .note-heading { min-width: 0; gap: 11px; }
@@ -318,13 +318,13 @@ onBeforeUnmount(() => {
   background: var(--primary-soft);
 }
 .note-title-line { gap: 8px; }
-h2 { margin: 0; color: var(--text-primary); font-size: 14px; font-weight: 680; }
-.note-heading p { margin: 3px 0 0; color: var(--text-muted); font-size: 11px; }
+h2 { margin: 0; color: var(--text-primary); font-size: calc(14px * var(--ui-font-ratio)); font-weight: 680; }
+.note-heading p { margin: 3px 0 0; color: var(--text-muted); font-size: calc(11px * var(--ui-font-ratio)); }
 .markdown-badge {
   padding: 2px 6px;
   color: var(--primary-hover);
   font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
-  font-size: 9px;
+  font-size: calc(9px * var(--ui-font-ratio));
   border: 1px solid rgba(255, 161, 22, 0.23);
   border-radius: 4px;
   background: rgba(255, 161, 22, 0.07);
@@ -351,7 +351,7 @@ h2 { margin: 0; color: var(--text-primary); font-size: 14px; font-weight: 680; }
   padding: 0 10px;
   gap: 6px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--ui-font-ratio));
   background: transparent;
 }
 .mode-tabs button:hover { color: var(--text-primary); }
@@ -363,7 +363,7 @@ h2 { margin: 0; color: var(--text-primary); font-size: 14px; font-weight: 680; }
   padding: 0 12px;
   gap: 6px;
   color: var(--on-primary);
-  font-size: 11px;
+  font-size: calc(11px * var(--ui-font-ratio));
   font-weight: 700;
   background: var(--primary);
 }
@@ -379,7 +379,7 @@ textarea {
   resize: vertical;
   color: var(--text-primary);
   font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
-  font-size: 13px;
+  font-size: calc(13px * var(--ui-font-ratio));
   line-height: 1.75;
   border: 0;
   outline: 0;
@@ -393,7 +393,7 @@ textarea:focus { box-shadow: inset 0 0 0 1px var(--primary) !important; }
   padding: 8px 13px;
   gap: 18px;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: calc(10px * var(--ui-font-ratio));
   border-top: 1px solid var(--border-secondary);
   background: var(--code-surface-raised);
 }
@@ -416,15 +416,15 @@ textarea:focus { box-shadow: inset 0 0 0 1px var(--primary) !important; }
 }
 .note-empty:hover { color: var(--text-secondary); border-color: rgba(255, 161, 22, 0.42); }
 .note-empty svg { color: var(--primary); }
-.note-empty strong { color: var(--text-secondary); font-size: 13px; }
-.note-empty span { font-size: 11px; }
+.note-empty strong { color: var(--text-secondary); font-size: calc(13px * var(--ui-font-ratio)); }
+.note-empty span { font-size: calc(11px * var(--ui-font-ratio)); }
 
 .note-loading {
   justify-content: center;
   min-height: 160px;
   gap: 8px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--ui-font-ratio));
   background: var(--bg-input);
 }
 .save-status {
@@ -434,7 +434,7 @@ textarea:focus { box-shadow: inset 0 0 0 1px var(--primary) !important; }
   border-top: 1px solid var(--border-secondary);
   background: var(--code-surface-raised);
 }
-.status-pill { gap: 5px; color: var(--text-muted); font-size: 10px; }
+.status-pill { gap: 5px; color: var(--text-muted); font-size: calc(10px * var(--ui-font-ratio)); }
 .status-saved,
 .status-idle { color: var(--success-strong); }
 .status-dirty { color: var(--warning-strong); }
@@ -445,10 +445,10 @@ textarea:focus { box-shadow: inset 0 0 0 1px var(--primary) !important; }
   min-height: 26px;
   padding: 0 8px;
   color: var(--danger-strong);
-  font-size: 10px;
+  font-size: calc(10px * var(--ui-font-ratio));
   background: rgba(255, 55, 95, 0.1);
 }
-.error-message { min-width: 0; overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.error-message { min-width: 0; overflow: hidden; font-size: calc(10px * var(--ui-font-ratio)); text-overflow: ellipsis; white-space: nowrap; }
 .spin { animation: spin 800ms linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

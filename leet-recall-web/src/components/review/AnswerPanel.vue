@@ -68,8 +68,8 @@ defineEmits<{ toggle: [] }>()
 article { min-width: 0; padding: 17px; }
 article + article { border-left: 1px solid var(--border-secondary); }
 .code-article { grid-column: 1 / -1; border-top: 1px solid var(--border-secondary); border-left: 0 !important; }
-h3 { margin: 0 0 9px; color: var(--text-primary); font-size: 13px; font-weight: 650; }
-p, ul { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.75; }
+h3 { margin: 0 0 9px; color: var(--text-primary); font-size: calc(13px * var(--ui-font-ratio)); font-weight: 650; }
+p, ul { margin: 0; color: var(--text-secondary); font-size: calc(13px * var(--ui-font-ratio)); line-height: 1.75; }
 ul { display: grid; gap: 4px; padding-left: 17px; }
 pre {
   max-height: 230px;
@@ -77,7 +77,7 @@ pre {
   margin: 0;
   overflow: auto;
   color: var(--code-text);
-  font-size: 12px;
+  font-size: calc(12px * var(--ui-font-ratio));
   line-height: 1.65;
   border-radius: 6px;
   border: 1px solid var(--border-secondary);

@@ -243,10 +243,8 @@ useReviewShortcuts({
 
 <style scoped>
 .review-page {
-  width: min(1220px, calc(100% - 56px));
-  height: calc(100dvh - var(--topbar-height));
-  padding: 14px 0;
-  margin: 0 auto;
+  height: calc(var(--viewport-height) - var(--topbar-height));
+  padding: 14px 22px;
   display: grid;
   grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
@@ -254,7 +252,7 @@ useReviewShortcuts({
 
 .review-grid {
   display: grid;
-  grid-template-columns: minmax(620px, 860px) minmax(248px, 286px);
+  grid-template-columns: minmax(0, 1fr) minmax(248px, 300px);
   min-height: 0;
   gap: 22px;
   align-items: stretch;
@@ -290,7 +288,7 @@ useReviewShortcuts({
   padding: 0 14px;
   gap: 7px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--ui-font-ratio));
   font-weight: 620;
   border: 0;
   background: transparent;
@@ -316,7 +314,7 @@ useReviewShortcuts({
   padding: 0 11px;
   margin: 4px 0 4px auto;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--ui-font-ratio));
   border: 1px solid var(--border-primary);
   border-radius: 6px;
 }
@@ -354,9 +352,8 @@ useReviewShortcuts({
 
 @media (max-width: 1279px) {
   .review-page {
-    width: min(1100px, calc(100% - 36px));
     height: auto;
-    min-height: calc(100dvh - var(--topbar-height));
+    min-height: calc(var(--viewport-height) - var(--topbar-height));
     overflow: visible;
   }
   .review-grid { grid-template-columns: minmax(0, 1fr); }
@@ -370,8 +367,7 @@ useReviewShortcuts({
 
 @media (max-width: 720px) {
   .review-page {
-    width: calc(100% - 24px);
-    padding: 20px 0 calc(88px + env(safe-area-inset-bottom));
+    padding: 20px 12px calc(88px + env(safe-area-inset-bottom));
   }
 
   .review-aside { grid-template-columns: 1fr; }
@@ -384,7 +380,7 @@ useReviewShortcuts({
     min-height: 52px;
     gap: 3px;
     padding: 4px 2px;
-    font-size: 11px;
+    font-size: calc(11px * var(--ui-font-ratio));
   }
 
   .study-tabs .edit-entry {

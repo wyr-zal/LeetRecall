@@ -125,8 +125,8 @@ const rows = computed(() => props.items.map((item) => ({ item, stamp: queueStamp
   padding-right: 6px;
   margin-bottom: 13px;
 }
-h2 { margin: 0; font-size: 15px; font-weight: 650; }
-.queue-heading > span { color: var(--text-muted); font-size: 12px; }
+h2 { margin: 0; font-size: calc(15px * var(--ui-font-ratio)); font-weight: 650; }
+.queue-heading > span { color: var(--text-muted); font-size: calc(12px * var(--ui-font-ratio)); }
 .queue-list {
   display: grid;
   min-height: 0;
@@ -146,7 +146,8 @@ button {
   min-height: 38px;
   padding: 7px 8px;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: calc(13px * var(--ui-font-ratio));
+  line-height: 1.5;
   text-align: left;
   border: 0;
   border-radius: 6px;
@@ -155,7 +156,7 @@ button {
 button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .queue-time {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--ui-font-ratio));
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }

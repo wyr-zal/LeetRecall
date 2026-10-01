@@ -40,7 +40,7 @@ button:disabled { opacity: 0.55; }
 .forgot:hover:not(:disabled) { background: rgba(255, 55, 95, 0.1); }
 .fuzzy:hover:not(:disabled) { background: rgba(255, 192, 30, 0.1); }
 .known:hover:not(:disabled) { background: rgba(0, 184, 163, 0.1); }
-kbd { padding: 2px 5px; color: inherit; font-size: 10px; border: 1px solid currentColor; border-radius: 4px; opacity: 0.62; }
+kbd { padding: 2px 5px; color: inherit; font-size: calc(10px * var(--ui-font-ratio)); border: 1px solid currentColor; border-radius: 4px; opacity: 0.62; }
 @media (max-width: 560px) {
   .result-buttons { grid-template-columns: 1fr; }
 }

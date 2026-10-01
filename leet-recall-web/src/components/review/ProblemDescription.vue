@@ -37,6 +37,6 @@ defineProps<{ markdown: string }>()
   background: var(--border-highlight);
 }
 .description-empty svg { color: var(--primary); }
-.description-empty strong { color: var(--text-secondary); font-size: 14px; }
-.description-empty span { font-size: 11px; }
+.description-empty strong { color: var(--text-secondary); font-size: calc(14px * var(--ui-font-ratio)); }
+.description-empty span { font-size: calc(11px * var(--ui-font-ratio)); }
 </style>

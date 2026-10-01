@@ -21,6 +21,7 @@ describe('dictationStore', () => {
       title: problemId === 1 ? '两数之和' : '二叉树的最近公共祖先',
       tags: ['递归'], language: 'JAVA', templateCode: 'return {{blank_1}};',
       keywords: ['返回节点'], mistakes: ['返回错误'],
+      difficulty: 'MEDIUM', descriptionMarkdown: '给定一棵二叉树', recallQuestions: [], coreIdea: '后序遍历',
     }))
     vi.spyOn(dictationApi, 'getRecords').mockResolvedValue({ page: 1, pageSize: 2, total: 0, items: [] })
     vi.spyOn(dictationApi, 'submit').mockResolvedValue({

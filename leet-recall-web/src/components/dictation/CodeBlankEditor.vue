@@ -4,9 +4,11 @@ import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import 'monaco-editor/esm/vs/basic-languages/java/java.contribution'
 import { Copy, Maximize2, Minus, Plus } from 'lucide-vue-next'
+import { codeFontSize, stepCodeFontSize } from '@/composables/useFontScale'
 import type { DictationResultItem } from '@/types/dictation'
 import type { CodeAnnotationAnchor, ResolvedCodeAnnotation } from '@/types/annotation'
 import { renderMarkdown } from '@/utils/markdown'
+import { stripJavaComments } from '@/utils/stripJavaComments'
 
 interface MonacoEnvironmentConfig {
   getWorker: () => Worker
@@ -31,13 +33,14 @@ const emit = defineEmits<{
 
 const shellRef = ref<HTMLElement | null>(null)
 const editorRef = ref<HTMLElement | null>(null)
-const fontSize = ref(14)
 const fullscreen = ref(false)
 const copied = ref(false)
 let editor: monaco.editor.IStandaloneCodeEditor | null = null
 let resizeObserver: ResizeObserver | null = null
 let widgets: monaco.editor.IContentWidget[] = []
-let widgetInputs = new Map<string, HTMLInputElement>()
+let widgetInputs = new Map<string, HTMLTextAreaElement>()
+let widgetLines = new Map<string, number>()
+let blankLineZoneIds = new Map<number, string>()
 let annotationDecorations: monaco.editor.IEditorDecorationsCollection | null = null
 let selectionAction: monaco.editor.IContentWidget | null = null
 let pendingSelection: CodeAnnotationAnchor | null = null
@@ -57,21 +60,24 @@ function measureTextWidth(text: string, font: string): number {
   return measureContext.measureText(text).width
 }
 
-function fitInputWidth(input: HTMLInputElement): void {
+function fitInputWidth(input: HTMLTextAreaElement): void {
   const text = input.value.length > 0 ? input.value : input.placeholder
   const font = getComputedStyle(input).font || '12px monospace'
   const editorWidth = editorRef.value?.clientWidth ?? 600
   const maxWidth = Math.max(260, editorWidth - 160)
-  input.style.width = `${Math.min(Math.max(90, Math.ceil(measureTextWidth(text, font)) + 30), maxWidth)}px`
+  const widestLine = text.split('\n').reduce((widest, line) => Math.max(widest, measureTextWidth(line, font)), 0)
+  input.style.width = `${Math.min(Math.max(90, Math.ceil(widestLine) + 30), maxWidth)}px`
 }
 
-function syncInput(key: string, input: HTMLInputElement): void {
+function syncInput(key: string, input: HTMLTextAreaElement): void {
   fitInputWidth(input)
+  updateBlankLineZones()
   emit('update:answers', { ...props.answers, [key]: input.value })
 }
 
-function handleBlankKeydown(event: KeyboardEvent, key: string, input: HTMLInputElement): void {
-  event.stopPropagation()
+function handleBlankKeydown(event: KeyboardEvent, key: string, input: HTMLTextAreaElement): void {
+  // 保留 Ctrl/Cmd+Enter 提交快捷键，其余按键留在当前空位内处理。
+  if (!((event.ctrlKey || event.metaKey) && event.key === 'Enter')) event.stopPropagation()
   const { selectionStart, selectionEnd, value } = input
   if (selectionStart === null || selectionEnd === null) return
   const collapsed = selectionStart === selectionEnd
@@ -108,8 +114,9 @@ onMounted(() => {
     language: 'java',
     theme: 'leetRecall',
     fontFamily: '"JetBrains Mono", "Cascadia Code", Consolas, monospace',
-    fontSize: fontSize.value,
-    lineHeight: 24,
+    fontLigatures: false,
+    fontSize: codeFontSize.value,
+    lineHeight: codeFontSize.value + 10,
     minimap: { enabled: false },
     lineNumbersMinChars: 3,
     padding: { top: 16, bottom: 16 },
@@ -207,6 +214,7 @@ watch(() => props.answers, (answers) => {
       fitInputWidth(input)
     }
   }
+  updateBlankLineZones()
 }, { deep: true })
 
 watch(resultMap, applyResultStyles)
@@ -225,19 +233,20 @@ function renderModel(): void {
     return
   }
   editor.updateOptions({ readOnly: true, glyphMargin: false })
+  const templateCode = stripJavaComments(props.templateCode)
   const tokenRegex = /{{(blank_\d+)}}/g
   const placeholders: Array<{ key: string; offset: number }> = []
   let output = ''
   let lastIndex = 0
-  for (const match of props.templateCode.matchAll(tokenRegex)) {
+  for (const match of templateCode.matchAll(tokenRegex)) {
     if (match.index === undefined) continue
-    output += props.templateCode.slice(lastIndex, match.index)
+    output += templateCode.slice(lastIndex, match.index)
     const offset = output.length
-    output += '______________'
+    output += '              '
     placeholders.push({ key: match[1] ?? '', offset })
     lastIndex = match.index + match[0].length
   }
-  output += props.templateCode.slice(lastIndex)
+  output += templateCode.slice(lastIndex)
   editor.setValue(output)
   const model = editor.getModel()
   if (!model) return
@@ -250,6 +259,33 @@ function renderModel(): void {
   nextTick(() => {
     applyResultStyles()
     for (const input of widgetInputs.values()) fitInputWidth(input)
+    updateBlankLineZones()
+  })
+}
+
+function updateBlankLineZones(): void {
+  if (!editor) return
+  const lineHeight = editor.getOption(monaco.editor.EditorOption.lineHeight)
+  const extraLinesByLine = new Map<number, number>()
+  for (const [key, input] of widgetInputs) {
+    const line = widgetLines.get(key)
+    if (line === undefined) continue
+    const extraLines = Math.max(0, input.value.split('\n').length - 1)
+    extraLinesByLine.set(line, Math.max(extraLinesByLine.get(line) ?? 0, extraLines))
+    input.style.height = `${(extraLines + 1) * lineHeight}px`
+  }
+  editor.changeViewZones((accessor) => {
+    for (const id of blankLineZoneIds.values()) accessor.removeZone(id)
+    blankLineZoneIds = new Map()
+    for (const [line, extraLines] of extraLinesByLine) {
+      if (extraLines === 0) continue
+      const id = accessor.addZone({
+        afterLineNumber: line,
+        heightInPx: extraLines * lineHeight,
+        domNode: document.createElement('div'),
+      })
+      blankLineZoneIds.set(line, id)
+    }
   })
 }
 
@@ -377,17 +413,17 @@ function countOccurrences(code: string, text: string, offset: number): number {
 function createWidget(key: string, position: monaco.Position): monaco.editor.IContentWidget {
   const node = document.createElement('div')
   node.className = 'dictation-blank-widget'
-  const input = document.createElement('input')
-  input.type = 'text'
+  const input = document.createElement('textarea')
+  input.rows = 1
   input.value = props.answers[key] ?? ''
   input.placeholder = key.replace('blank_', '空位 ')
   input.setAttribute('aria-label', `${key} 默写空位`)
-  input.autocomplete = 'off'
   input.spellcheck = false
   input.addEventListener('input', () => syncInput(key, input))
   input.addEventListener('keydown', (event) => handleBlankKeydown(event, key, input))
   node.append(input)
   widgetInputs.set(key, input)
+  widgetLines.set(key, position.lineNumber)
   return {
     getId: () => `blank-widget-${key}`,
     getDomNode: () => node,
@@ -402,6 +438,13 @@ function disposeWidgets(): void {
   if (editor) widgets.forEach((widget) => editor?.removeContentWidget(widget))
   widgets = []
   widgetInputs = new Map()
+  widgetLines = new Map()
+  if (editor && blankLineZoneIds.size > 0) {
+    editor.changeViewZones((accessor) => {
+      for (const id of blankLineZoneIds.values()) accessor.removeZone(id)
+    })
+  }
+  blankLineZoneIds = new Map()
 }
 
 function applyResultStyles(): void {
@@ -412,10 +455,16 @@ function applyResultStyles(): void {
   }
 }
 
+// 设置页与工具条共用同一份代码字号，任一处改动都会同步到 Monaco 与空位输入框。
 function changeFontSize(delta: number): void {
-  fontSize.value = Math.min(20, Math.max(12, fontSize.value + delta))
-  editor?.updateOptions({ fontSize: fontSize.value, lineHeight: fontSize.value + 10 })
+  stepCodeFontSize(delta)
 }
+
+watch(codeFontSize, (size) => {
+  editor?.updateOptions({ fontSize: size, lineHeight: size + 10 })
+  for (const input of widgetInputs.values()) fitInputWidth(input)
+  updateBlankLineZones()
+})
 
 async function copyCode(): Promise<void> {
   await navigator.clipboard.writeText(editor?.getValue() ?? '')
@@ -442,7 +491,7 @@ function handleFullscreenChange(): void {
       <div class="toolbar-actions">
         <span v-if="copied" class="copied">已复制</span>
         <button type="button" aria-label="缩小代码字号" @click="changeFontSize(-1)"><Minus :size="15" /></button>
-        <span class="font-size">{{ fontSize }}</span>
+        <span class="font-size">{{ codeFontSize }}</span>
         <button type="button" aria-label="增大代码字号" @click="changeFontSize(1)"><Plus :size="15" /></button>
         <button type="button" aria-label="复制代码" @click="copyCode"><Copy :size="16" /></button>
         <button type="button" aria-label="全屏编辑器" @click="toggleFullscreen"><Maximize2 :size="16" /></button>
@@ -454,14 +503,17 @@ function handleFullscreenChange(): void {
 
 <style scoped>
 .editor-shell {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--border-primary);
   border-radius: 8px;
   background: var(--code-surface);
   box-shadow: none;
 }
-.editor-shell:fullscreen { width: 100vw; height: 100vh; border: 0; border-radius: 0; }
-.editor-shell:fullscreen .editor { height: calc(100vh - 48px); }
+.editor-shell:fullscreen { width: var(--viewport-width); height: var(--viewport-height); border: 0; border-radius: 0; }
+.editor-shell:fullscreen .editor { height: calc(var(--viewport-height) - 48px); }
 .editor-toolbar {
   display: flex;
   align-items: center;
@@ -472,7 +524,7 @@ function handleFullscreenChange(): void {
   background: var(--code-surface-raised);
   box-shadow: none;
 }
-.language { color: var(--text-secondary); font-size: 13px; font-weight: 560; }
+.language { color: var(--text-secondary); font-size: calc(13px * var(--ui-font-ratio)); font-weight: 560; }
 .toolbar-actions { display: flex; align-items: center; gap: 4px; }
 .toolbar-actions button {
   display: grid;
@@ -485,9 +537,10 @@ function handleFullscreenChange(): void {
   background: transparent;
 }
 .toolbar-actions button:hover { color: var(--text-primary); background: var(--bg-card-hover); }
-.font-size, .copied { color: var(--text-muted); font-size: 11px; }
+.font-size, .copied { color: var(--text-muted); font-size: calc(11px * var(--ui-font-ratio)); }
 .copied { margin-right: 5px; color: var(--success); }
-.editor { height: 470px; }
+/* 高度交给父容器（默写页右栏）撑满，Monaco 已挂 ResizeObserver，会自动 layout()。 */
+.editor { min-height: 0; flex: 1; }
 :deep(.dictation-blank-widget) {
   transform: translateY(-2px);
 }
@@ -509,7 +562,7 @@ function handleFullscreenChange(): void {
   padding: 12px;
   overflow: auto;
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: calc(12px * var(--ui-font-ratio));
   border: 1px solid var(--primary);
   border-radius: 7px;
   background: var(--bg-card);
@@ -519,7 +572,9 @@ function handleFullscreenChange(): void {
   padding: 5px 7px;
   overflow: hidden;
   color: var(--text-muted);
-  font: 11px/1.5 "JetBrains Mono", Consolas, monospace;
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: var(--code-font-size);
+  line-height: 1.5;
   text-overflow: ellipsis;
   white-space: nowrap;
   border-radius: 4px;
@@ -532,29 +587,37 @@ function handleFullscreenChange(): void {
 :deep(.annotation-selection-action) {
   padding: 4px 8px;
   color: var(--text-primary);
-  font-size: 11px;
+  font-size: calc(11px * var(--ui-font-ratio));
   border: 1px solid var(--primary);
   border-radius: 5px;
   background: var(--bg-card);
   box-shadow: 0 4px 12px rgba(0, 0, 0, .28);
 }
-:deep(.dictation-blank-widget input) {
+:deep(.dictation-blank-widget textarea) {
+  display: block;
+  box-sizing: border-box;
   width: 112px;
-  height: 23px;
+  height: calc(var(--code-font-size) + 9px);
   padding: 0 7px;
+  overflow: hidden;
   color: var(--text-primary);
-  font: 12px/21px "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  font-size: var(--code-font-size);
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+  line-height: calc(var(--code-font-size) + 9px);
+  white-space: pre;
+  resize: none;
   border: 1px solid var(--primary);
   border-radius: 4px;
   outline: none;
   background: var(--primary-soft);
   box-shadow: 0 0 0 2px rgba(255, 161, 22, 0.08);
 }
-:deep(.dictation-blank-widget input:focus) { border-color: var(--primary-hover); background: var(--primary-soft); }
-:deep(.dictation-blank-widget input.is-correct) { color: var(--success-strong); border-color: var(--success); background: rgba(34, 197, 94, 0.16); }
-:deep(.dictation-blank-widget input.is-incorrect) { color: var(--danger-strong); border-color: var(--danger); background: var(--danger-soft); }
+:deep(.dictation-blank-widget textarea:focus) { border-color: var(--primary-hover); background: var(--primary-soft); }
+:deep(.dictation-blank-widget textarea.is-correct) { color: var(--success-strong); border-color: var(--success); background: rgba(34, 197, 94, 0.16); }
+:deep(.dictation-blank-widget textarea.is-incorrect) { color: var(--danger-strong); border-color: var(--danger); background: var(--danger-soft); }
 @media (max-width: 720px) {
-  .editor { height: 420px; }
   .editor-toolbar { padding-inline: 8px; }
   .toolbar-actions { gap: 2px; }
   .toolbar-actions button { width: 44px; height: 44px; }

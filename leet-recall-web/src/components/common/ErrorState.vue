@@ -28,7 +28,7 @@ defineEmits<{ retry: [] }>()
 
 .state h2 {
   margin: 0 0 18px;
-  font-size: 17px;
+  font-size: calc(17px * var(--ui-font-ratio));
   font-weight: 560;
 }
 

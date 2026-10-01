@@ -15,7 +15,7 @@ const html = computed(() => renderMarkdown(props.markdown))
 <style scoped>
 .markdown-content {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: calc(13px * var(--ui-font-ratio));
   line-height: 1.82;
   overflow-wrap: anywhere;
 }
@@ -30,9 +30,9 @@ const html = computed(() => renderMarkdown(props.markdown))
   color: var(--text-primary);
   line-height: 1.35;
 }
-.markdown-content :deep(h1) { font-size: 20px; }
-.markdown-content :deep(h2) { font-size: 17px; }
-.markdown-content :deep(h3) { font-size: 14px; }
+.markdown-content :deep(h1) { font-size: calc(20px * var(--ui-font-ratio)); }
+.markdown-content :deep(h2) { font-size: calc(17px * var(--ui-font-ratio)); }
+.markdown-content :deep(h3) { font-size: calc(14px * var(--ui-font-ratio)); }
 .markdown-content :deep(p),
 .markdown-content :deep(ul),
 .markdown-content :deep(ol),

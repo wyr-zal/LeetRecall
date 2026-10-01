@@ -11,6 +11,7 @@ import com.leetrecall.problem.entity.Problem;
 import com.leetrecall.problem.mapper.ProblemMapper;
 import com.leetrecall.problem.mapper.ProblemMistakeMapper;
 import com.leetrecall.problem.mapper.ProblemTagMapper;
+import com.leetrecall.problem.mapper.RecallQuestionMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -36,7 +37,8 @@ class DictationServiceSnapshotTest {
         when(templateMapper.selectOne(any())).thenReturn(template);
         when(answerViewMapper.selectCount(any())).thenReturn(0L);
         DictationService service = new DictationService(templateMapper, recordMapper, answerViewMapper, problemMapper,
-                mock(ProblemTagMapper.class), mock(ProblemMistakeMapper.class), new DictationScorer(), new ObjectMapper(), Clock.systemUTC());
+                mock(ProblemTagMapper.class), mock(ProblemMistakeMapper.class), mock(RecallQuestionMapper.class),
+                new DictationScorer(), new ObjectMapper(), Clock.systemUTC());
 
         service.submit(1L, "session", new DictationSubmitDTO(Map.of("blank_1", "return;"), false, 12));
 

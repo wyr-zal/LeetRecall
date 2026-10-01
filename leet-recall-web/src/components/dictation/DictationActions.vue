@@ -18,7 +18,7 @@ defineEmits<{ reset: []; answer: []; submit: [] }>()
 <style scoped>
 .actions { display: grid; grid-template-columns: 0.8fr 0.9fr 1.15fr; gap: 12px; margin-top: 15px; }
 button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; color: var(--text-secondary); border: 1px solid var(--border-primary); border-radius: 8px; background: var(--bg-input); box-shadow: none; }
-kbd { padding: 2px 5px; color: inherit; font-size: 10px; border: 1px solid currentColor; border-radius: 4px; opacity: 0.62; }
+kbd { padding: 2px 5px; color: inherit; font-size: calc(10px * var(--ui-font-ratio)); border: 1px solid currentColor; border-radius: 4px; opacity: 0.62; }
 button:hover:not(:disabled) { color: var(--text-primary); border-color: var(--border-hover); }
 button:disabled { opacity: 0.55; }
 .primary { color: var(--on-primary); border-color: var(--primary); background: var(--primary); box-shadow: none; }

@@ -18,7 +18,7 @@ const shortcuts = [
 
 <style scoped>
 .shortcuts { padding: 18px; background: var(--bg-card); }
-h2 { margin: 0 0 14px; font-size: 15px; font-weight: 650; }
+h2 { margin: 0 0 14px; font-size: calc(15px * var(--ui-font-ratio)); font-weight: 650; }
 dl { display: grid; grid-template-columns: 1fr 1fr; gap: 9px 12px; margin: 0; }
 dl > div { display: flex; align-items: center; gap: 8px; }
 dt, dd { margin: 0; }
@@ -28,11 +28,11 @@ kbd {
   height: 28px;
   padding: 0 6px;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: calc(11px * var(--ui-font-ratio));
   border: 1px solid var(--border-primary);
   border-radius: 6px;
   place-items: center;
   background: var(--bg-input);
 }
-dd { color: var(--text-muted); font-size: 12px; }
+dd { color: var(--text-muted); font-size: calc(12px * var(--ui-font-ratio)); }
 </style>

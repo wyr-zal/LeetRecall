@@ -6,11 +6,9 @@ import { useDictationStore } from '@/stores/dictation'
 import { isEditableTarget } from '@/composables/useReviewShortcuts'
 import DictationProgress from '@/components/dictation/DictationProgress.vue'
 import DictationProblemHeader from '@/components/dictation/DictationProblemHeader.vue'
+import DictationProblemPanel from '@/components/dictation/DictationProblemPanel.vue'
 import DictationProblemPicker from '@/components/dictation/DictationProblemPicker.vue'
 import DictationActions from '@/components/dictation/DictationActions.vue'
-import CompletionRing from '@/components/dictation/CompletionRing.vue'
-import KeywordPanel from '@/components/dictation/KeywordPanel.vue'
-import MistakePanel from '@/components/dictation/MistakePanel.vue'
 import AnnotationPanel from '@/components/dictation/AnnotationPanel.vue'
 import DictationHistory from '@/components/dictation/DictationHistory.vue'
 import RecordDetailDialog from '@/components/dictation/RecordDetailDialog.vue'
@@ -35,7 +33,6 @@ const {
   currentProblemId,
   currentProblem,
   currentAnswers,
-  currentAccuracy,
   viewedAnswer,
   answerVisible,
   revealedAnswer,
@@ -58,12 +55,15 @@ const recordDetail = ref<DictationRecordDetail | null>(null)
 const selectedAnnotationId = ref<number | null>(null)
 const deleteAnnotationId = ref<number | null>(null)
 const draftAnnotationAnchor = ref<CodeAnnotationAnchor | null>(null)
-const visibleAnnotations = computed(() => answerVisible.value ? resolvedAnnotations.value : resolvedAnnotations.value.map((annotation) => ({
-  ...annotation,
-  resolved: true,
-})))
+const visibleAnnotations = computed(() => answerVisible.value ? resolvedAnnotations.value : [])
 let firstActivation = true
 const pickerOpen = ref(false)
+const drawerOpen = ref(false)
+// 窄屏（≤720px）在题目/代码两栏间二选一；宽屏两栏并排，该值由 CSS 忽略。
+const activeView = ref<'problem' | 'code'>('problem')
+const progressPercent = computed(() => todayQueue.value.length
+  ? ((currentIndex.value + 1) / todayQueue.value.length) * 100
+  : 0)
 
 onMounted(() => {
   void store.loadQueue()
@@ -79,6 +79,14 @@ watch(currentProblem, (problem) => {
 }, { immediate: true })
 watch(revealedAnswer, (answer) => {
   annotationStore.setCode(answer?.fullCode ?? '')
+})
+watch(answerVisible, (visible) => {
+  if (!visible) drawerOpen.value = false
+  else if (draftAnnotationAnchor.value) drawerOpen.value = true
+})
+// 选中代码发起批注时抽屉自动展开，省掉手动点开的一步。
+watch(draftAnnotationAnchor, (anchor) => {
+  if (anchor) drawerOpen.value = true
 })
 // 视图被 KeepAlive 缓存：监听必须跟随 activated/deactivated 挂卸，否则会泄漏到复习页。
 onActivated(() => {
@@ -98,6 +106,10 @@ function handleDictationKeydown(event: KeyboardEvent): void {
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
     event.preventDefault()
     void store.submit()
+    return
+  }
+  if (event.key === 'Escape' && drawerOpen.value) {
+    drawerOpen.value = false
     return
   }
   if (isEditableTarget(event.target)) return
@@ -145,6 +157,11 @@ function requestDeleteAnnotation(id: number): void {
   deleteAnnotationId.value = id
 }
 
+function toggleAnnotations(): void {
+  if (!answerVisible.value) return
+  drawerOpen.value = !drawerOpen.value
+}
+
 async function confirmDeleteAnnotation(): Promise<void> {
   if (deleteAnnotationId.value === null) return
   const deleted = await annotationStore.remove(deleteAnnotationId.value)
@@ -173,14 +190,6 @@ async function openRecord(recordId: number): Promise<void> {
 
 <template>
   <main class="dictation-page">
-    <DictationProgress
-      :current="currentIndex + 1"
-      :total="todayQueue.length"
-      @previous="store.move(-1)"
-      @next="store.move(1)"
-      @pick="pickerOpen = true"
-    />
-
     <LoadingState v-if="loading" />
     <ErrorState v-else-if="error && !currentProblem" :message="error" @retry="store.loadQueue" />
     <EmptyState
@@ -191,16 +200,60 @@ async function openRecord(recordId: number): Promise<void> {
     />
 
     <template v-else-if="currentProblem">
-      <div class="dictation-grid">
-        <section class="editor-card app-card app-card--raised">
-          <LoadingState v-if="detailLoading" />
-          <template v-else>
-            <DictationProblemHeader
-              :number="currentProblem.leetcodeNumber"
-              :title="currentProblem.title"
-              :tags="currentProblem.tags"
+      <LoadingState v-if="detailLoading" />
+      <template v-else>
+        <div class="dictation-header">
+          <DictationProblemHeader
+            :number="currentProblem.leetcodeNumber"
+            :title="currentProblem.title"
+            :tags="currentProblem.tags"
+            :progress="progressPercent"
+          >
+            <DictationProgress
+              :current="currentIndex + 1"
+              :total="todayQueue.length"
+              :annotation-count="answerVisible ? resolvedAnnotations.length : 0"
+              :annotations-visible="answerVisible"
+              @previous="store.move(-1)"
+              @next="store.move(1)"
+              @pick="pickerOpen = true"
+              @annotations="toggleAnnotations"
             />
+          </DictationProblemHeader>
+        </div>
+
+        <nav class="view-switch" role="tablist" aria-label="默写视图">
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="activeView === 'problem'"
+            :class="{ active: activeView === 'problem' }"
+            @click="activeView = 'problem'"
+          >
+            题目
+          </button>
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="activeView === 'code'"
+            :class="{ active: activeView === 'code' }"
+            @click="activeView = 'code'"
+          >
+            代码
+          </button>
+        </nav>
+
+        <div class="dictation-layout" :class="`view-${activeView}`">
+          <DictationProblemPanel
+            class="problem-column"
+            :description-markdown="currentProblem.descriptionMarkdown"
+            :recall-questions="currentProblem.recallQuestions"
+            :core-idea="currentProblem.coreIdea"
+          />
+
+          <section class="editor-column">
             <CodeBlankEditor
+              class="editor-slot"
               :template-code="currentProblem.templateCode"
               :answers="currentAnswers"
               :results="submitResult?.resultItems"
@@ -225,29 +278,28 @@ async function openRecord(recordId: number): Promise<void> {
               @answer="store.toggleAnswer"
               @submit="store.submit"
             />
-          </template>
-        </section>
+            <DictationHistory class="history" :records="history" @select="openRecord" />
+          </section>
+        </div>
+      </template>
 
-        <aside class="dictation-aside">
-          <CompletionRing :accuracy="currentAccuracy" />
-          <KeywordPanel :keywords="currentProblem.keywords" />
-          <MistakePanel :mistakes="currentProblem.mistakes" />
-          <AnnotationPanel
-            :annotations="visibleAnnotations"
-            :loading="annotationLoading"
-            :saving="annotationSaving"
-            :error="annotationError"
-            :draft-anchor="draftAnnotationAnchor"
-            :can-create="answerVisible"
-            @cancel-create="cancelAnnotationDraft"
-            @save-new="saveNewAnnotation"
-            @save="saveAnnotation"
-            @delete="requestDeleteAnnotation"
-            @select="selectAnnotation"
-          />
-        </aside>
-      </div>
-      <DictationHistory class="history" :records="history" @select="openRecord" />
+      <aside v-if="drawerOpen && answerVisible" class="annotation-drawer" aria-label="代码批注">
+        <AnnotationPanel
+          closable
+          :annotations="visibleAnnotations"
+          :loading="annotationLoading"
+          :saving="annotationSaving"
+          :error="annotationError"
+          :draft-anchor="draftAnnotationAnchor"
+          :can-create="answerVisible"
+          @cancel-create="cancelAnnotationDraft"
+          @save-new="saveNewAnnotation"
+          @save="saveAnnotation"
+          @delete="requestDeleteAnnotation"
+          @select="selectAnnotation"
+          @close="drawerOpen = false"
+        />
+      </aside>
     </template>
 
     <ConfirmDialog
@@ -278,21 +330,54 @@ async function openRecord(recordId: number): Promise<void> {
 </template>
 
 <style scoped>
-.dictation-page { width: min(1220px, calc(100% - 56px)); padding: 30px 0 52px; margin: 0 auto; }
-.dictation-grid { display: grid; grid-template-columns: minmax(660px, 1fr) minmax(248px, 286px); gap: 22px; align-items: start; }
-.editor-card { min-width: 0; padding: clamp(22px, 2.2vw, 28px); }
-.dictation-aside { display: grid; gap: 14px; }
-.history { width: calc(100% - 304px); margin-top: 16px; }
-.score-message { display: flex; align-items: baseline; gap: 11px; padding: 12px 14px; margin-top: 12px; border: 1px solid var(--border-primary); border-radius: 8px; background: var(--bg-input); box-shadow: inset 3px 0 0 var(--primary); }
-.score-message strong { color: var(--primary); font-size: 19px; }.score-message span { color: var(--text-secondary); font-size: 13px; }.score-message small { color: var(--warning); font-size: 11px; }
+.dictation-page {
+  display: flex;
+  height: calc(var(--viewport-height) - var(--topbar-height));
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dictation-header { flex: 0 0 auto; padding: 13px 22px 0; }
+.dictation-header :deep(.header) { padding-bottom: 12px; margin-bottom: 0; }
+
+/* 左题面右代码，两栏各自滚动撑满视口，页面本身不滚动。 */
+.dictation-layout {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.problem-column { min-width: 0; min-height: 0; border-right: 1px solid var(--border-secondary); }
+
+.editor-column { display: flex; min-width: 0; min-height: 0; flex-direction: column; padding: 16px 22px 18px; gap: 12px; overflow: hidden; }
+.editor-column > .editor-slot { min-height: 0; flex: 1; }
+.editor-column > .history { flex: 0 0 auto; max-height: 42%; margin-top: 0; overflow-y: auto; }
+
+.annotation-drawer { position: fixed; z-index: 40; top: var(--topbar-height); right: 0; bottom: 0; width: min(380px, 92vw); overflow: auto; padding: 16px; border-left: 1px solid var(--border-primary); background: var(--bg-primary); box-shadow: var(--shadow-high); }
+.score-message { display: flex; align-items: baseline; gap: 11px; padding: 12px 14px; border: 1px solid var(--border-primary); border-radius: 8px; background: var(--bg-input); box-shadow: inset 3px 0 0 var(--primary); }
+.score-message strong { color: var(--primary); font-size: calc(19px * var(--ui-font-ratio)); }.score-message span { color: var(--text-secondary); font-size: calc(13px * var(--ui-font-ratio)); }.score-message small { color: var(--warning); font-size: calc(11px * var(--ui-font-ratio)); }
 .score-message .next-problem { display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 0 12px; color: var(--on-primary); border: 1px solid var(--primary); border-radius: 7px; background: var(--primary); }
 .score-message .next-problem:hover:not(:disabled) { border-color: var(--primary-hover); background: var(--primary-hover); }
-.score-message .next-problem kbd { padding: 1px 5px; color: inherit; font-size: 10px; border: 1px solid currentColor; border-radius: 4px; opacity: 0.62; }
+.score-message .next-problem kbd { padding: 1px 5px; color: inherit; font-size: calc(10px * var(--ui-font-ratio)); border: 1px solid currentColor; border-radius: 4px; opacity: 0.62; }
+/* 窄屏用页签在题目/代码间二选一，宽屏由上方 .dictation-layout 并排接管。 */
+.view-switch { display: none; }
 @media (max-width: 1279px) {
-  .dictation-page { width: min(1100px, calc(100% - 36px)); }
-  .dictation-grid { grid-template-columns: minmax(0, 1fr); }
-  .dictation-aside { grid-template-columns: repeat(3, 1fr); }
-  .history { width: 100%; }
+  .dictation-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
-@media (max-width: 760px) { .dictation-page { width: calc(100% - 24px); padding: 20px 0 calc(88px + env(safe-area-inset-bottom)); }.dictation-aside { grid-template-columns: 1fr; }.score-message { align-items: flex-start; flex-direction: column; }.score-message small { margin-left: 0; } }
+@media (max-width: 720px) {
+  .dictation-page { height: calc(var(--viewport-height) - var(--topbar-height) - 64px - env(safe-area-inset-bottom)); }
+  .dictation-header { padding: 12px 14px 0; }
+  .view-switch { display: flex; flex: 0 0 auto; padding: 10px 14px 0; gap: 6px; }
+  .view-switch button { min-height: 38px; flex: 1; color: var(--text-muted); font-size: calc(13px * var(--ui-font-ratio)); font-weight: 620; border: 1px solid var(--border-primary); border-radius: 8px; background: transparent; }
+  .view-switch button.active { color: var(--on-primary); border-color: var(--primary); background: var(--primary); }
+  /* 单栏栅格：隐藏的那一栏不能继续占轨道，否则可见栏只剩半宽。 */
+  .dictation-layout { padding: 10px 14px 12px; gap: 10px; grid-template-columns: minmax(0, 1fr); }
+  .problem-column { display: none; border-right: 0; }
+  .editor-column { display: none; padding: 0; }
+  .dictation-layout.view-problem .problem-column { display: flex; }
+  .dictation-layout.view-code .editor-column { display: flex; }
+  .score-message { align-items: flex-start; flex-direction: column; }.score-message small { margin-left: 0; }
+}
 </style>

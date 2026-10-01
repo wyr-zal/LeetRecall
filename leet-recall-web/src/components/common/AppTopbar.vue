@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Flame, Moon, Search, Sun, UserRound } from 'lucide-vue-next'
+import { Flame, Moon, Search, Settings, Sun } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { reviewApi } from '@/api/review'
 import { useQuickReviewStore } from '@/stores/quickReview'
@@ -150,7 +150,9 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
         <Moon v-else :size="17" aria-hidden="true" />
         <span>{{ themeMode === 'dark' ? '浅色' : '深色' }}</span>
       </button>
-      <div class="avatar" aria-label="个人用户"><UserRound :size="20" /></div>
+      <RouterLink class="settings-link" to="/settings" aria-label="设置" title="设置">
+        <Settings :size="20" aria-hidden="true" />
+      </RouterLink>
     </div>
   </header>
 </template>
@@ -185,13 +187,13 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
 
 .route-context span {
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: calc(9px * var(--ui-font-ratio));
   font-weight: 700;
   letter-spacing: 0.08em;
 }
 
 .route-context strong {
-  font-size: 13px;
+  font-size: calc(13px * var(--ui-font-ratio));
   font-weight: 650;
 }
 
@@ -234,7 +236,7 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
   top: 10px;
   right: 12px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--ui-font-ratio));
 }
 
 .search-results {
@@ -273,7 +275,7 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
 .search-results p {
   margin: 10px;
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: calc(14px * var(--ui-font-ratio));
 }
 
 .topbar-actions,
@@ -307,7 +309,7 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
 .streak {
   gap: 8px;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: calc(14px * var(--ui-font-ratio));
   min-height: 34px;
   padding: 5px 9px;
   border: 1px solid var(--border-secondary);
@@ -321,21 +323,32 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
 
 .streak strong {
   color: var(--primary);
-  font-size: 16px;
+  font-size: calc(16px * var(--ui-font-ratio));
   font-weight: 650;
 }
 
-.avatar {
+.settings-link {
   display: grid;
+  flex: 0 0 34px;
   width: 34px;
   height: 34px;
   color: var(--text-secondary);
   border: 1px solid var(--border-primary);
   border-radius: 50%;
   place-items: center;
-  border-color: var(--border-primary);
   background: var(--bg-card-hover);
-  box-shadow: none;
+  text-decoration: none;
+}
+
+.settings-link:hover,
+.settings-link.router-link-active {
+  color: var(--text-primary);
+  border-color: var(--primary);
+}
+
+.settings-link:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 @media (max-width: 720px) {

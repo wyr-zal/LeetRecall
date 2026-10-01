@@ -42,12 +42,12 @@ defineEmits<{ update: [questionId: number, answer: string] }>()
 <style scoped>
 .recall-section { margin-top: 22px; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-h2 { margin: 0; font-size: 16px; font-weight: 620; }
+h2 { margin: 0; font-size: calc(16px * var(--ui-font-ratio)); font-weight: 620; }
 .heading-meta { display: flex; align-items: center; gap: 12px; }
-.heading-meta span { color: var(--text-muted); font-size: 12px; }
+.heading-meta span { color: var(--text-muted); font-size: calc(12px * var(--ui-font-ratio)); }
 .save-hint { transition: color 150ms ease; }
 .save-hint.saved { color: var(--success-strong); }
-.heading-meta a { display: inline-flex; align-items: center; gap: 4px; color: var(--primary); font-size: 12px; text-decoration: none; }
+.heading-meta a { display: inline-flex; align-items: center; gap: 4px; color: var(--primary); font-size: calc(12px * var(--ui-font-ratio)); text-decoration: none; }
 .heading-meta a:hover { text-decoration: underline; }
 .questions {
   overflow: hidden;
@@ -66,7 +66,7 @@ h2 { margin: 0; font-size: 16px; font-weight: 620; }
 }
 .question-card:last-child { border-bottom: 0; }
 .question-card:focus-within { background: var(--bg-card-hover); box-shadow: inset 3px 0 0 var(--primary); }
-.question-card > span { color: var(--text-secondary); font-size: 14px; font-weight: 560; line-height: 1.45; }
+.question-card > span { color: var(--text-secondary); font-size: calc(14px * var(--ui-font-ratio)); font-weight: 560; line-height: 1.45; }
 textarea {
   width: 100%;
   min-height: 38px;
@@ -89,14 +89,14 @@ textarea::placeholder { color: var(--placeholder); }
 }
 .correct-answer strong {
   color: var(--success);
-  font-size: 12px;
+  font-size: calc(12px * var(--ui-font-ratio));
   font-weight: 650;
   line-height: 1.65;
 }
 .correct-answer p {
   margin: 0;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: calc(13px * var(--ui-font-ratio));
   line-height: 1.65;
   overflow-wrap: anywhere;
 }

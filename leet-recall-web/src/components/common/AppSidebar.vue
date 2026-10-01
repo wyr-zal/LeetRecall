@@ -68,7 +68,7 @@ const navItems = [
   display: flex;
   flex-direction: column;
   width: 100%;
-  height: 100dvh;
+  height: var(--viewport-height);
   overflow: hidden;
   border-right: 1px solid var(--border-primary);
   background: var(--bg-sidebar);
@@ -107,7 +107,7 @@ const navItems = [
 
 .brand-name {
   overflow: hidden;
-  font-size: 17px;
+  font-size: calc(17px * var(--ui-font-ratio));
   font-weight: 680;
   letter-spacing: 0;
   line-height: 1;
@@ -115,7 +115,7 @@ const navItems = [
 
 .brand-meta {
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: calc(9px * var(--ui-font-ratio));
   font-weight: 650;
   letter-spacing: 0.08em;
 }
@@ -186,7 +186,7 @@ const navItems = [
 
 .bottom-action {
   width: 100%;
-  font-size: 15px;
+  font-size: calc(15px * var(--ui-font-ratio));
   text-align: left;
 }
 
@@ -259,7 +259,7 @@ const navItems = [
   .nav-link span {
     display: block;
     margin-left: 0;
-    font-size: 10px;
+    font-size: calc(10px * var(--ui-font-ratio));
     line-height: 1.1;
   }
 

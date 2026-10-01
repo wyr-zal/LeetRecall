@@ -39,7 +39,14 @@
   --shadow-medium: 0 8px 24px rgba(0, 0, 0, 0.2);
   --shadow-high: 0 18px 42px rgba(0, 0, 0, 0.34);
   --sidebar-width: 232px;
-  --topbar-height: 58px;
+  --topbar-height: 46px;
+  /* 由 useFontScale 在启动时按用户偏好覆盖为具体像素值。 */
+  --ui-font-size: 16px;
+  --code-font-size: 14px;
+  /* 正文基准 13px 对应 --ui-font-size，其余字号按同一比例缩放以保留层级。 */
+  --ui-font-ratio: 1.2308;
+  --viewport-height: 100dvh;
+  --viewport-width: 100vw;
   font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   color: var(--text-primary);
   background: var(--bg-primary);
@@ -101,9 +108,9 @@ body,
 }
 
 body {
-  min-height: 100vh;
-  min-height: 100dvh;
+  min-height: var(--viewport-height);
   overflow-x: hidden;
+  font-size: var(--ui-font-size);
   background: var(--bg-primary);
 }
 

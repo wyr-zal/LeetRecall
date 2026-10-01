@@ -13,7 +13,7 @@ defineProps<{ label: string }>()
   min-height: 26px;
   padding: 3px 9px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: calc(12px * var(--ui-font-ratio));
   border: 1px solid var(--border-secondary);
   border-radius: 6px;
   background: var(--surface-overlay);

@@ -1,4 +1,5 @@
 import type { PageResult } from './api'
+import type { Difficulty, RecallQuestion } from './problem'
 
 export interface DictationQueueItem {
   problemId: number
@@ -18,7 +19,11 @@ export interface DictationProblemDetail {
   problemId: number
   leetcodeNumber: number
   title: string
+  difficulty: Difficulty
   tags: string[]
+  descriptionMarkdown: string
+  recallQuestions: RecallQuestion[]
+  coreIdea: string
   language: 'JAVA'
   templateCode: string
   keywords: string[]

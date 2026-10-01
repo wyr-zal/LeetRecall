@@ -11,6 +11,7 @@ import com.leetrecall.problem.entity.Problem;
 import com.leetrecall.problem.mapper.ProblemMapper;
 import com.leetrecall.problem.mapper.ProblemMistakeMapper;
 import com.leetrecall.problem.mapper.ProblemTagMapper;
+import com.leetrecall.problem.mapper.RecallQuestionMapper;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -30,6 +31,7 @@ class DictationServiceIndentTest {
         ProblemMapper problemMapper = mock(ProblemMapper.class);
         ProblemTagMapper tagMapper = mock(ProblemTagMapper.class);
         ProblemMistakeMapper mistakeMapper = mock(ProblemMistakeMapper.class);
+        RecallQuestionMapper recallQuestionMapper = mock(RecallQuestionMapper.class);
         Problem problem = new Problem();
         problem.setId(1L);
         problem.setStatus(1);
@@ -44,9 +46,10 @@ class DictationServiceIndentTest {
         when(templateMapper.selectOne(any())).thenReturn(template);
         when(tagMapper.selectTagNames(anyLong(), anyInt())).thenReturn(List.of());
         when(mistakeMapper.selectList(any())).thenReturn(List.of());
+        when(recallQuestionMapper.selectList(any())).thenReturn(List.of());
         return new DictationService(templateMapper, mock(DictationRecordMapper.class),
                 mock(DictationAnswerViewMapper.class), problemMapper, tagMapper, mistakeMapper,
-                new DictationScorer(), new ObjectMapper(), Clock.systemUTC());
+                recallQuestionMapper, new DictationScorer(), new ObjectMapper(), Clock.systemUTC());
     }
 
     @Test
