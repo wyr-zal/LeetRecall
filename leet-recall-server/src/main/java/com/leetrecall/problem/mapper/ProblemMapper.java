@@ -32,18 +32,7 @@ public interface ProblemMapper extends BaseMapper<Problem> {
             FROM problem p
             LEFT JOIN problem_progress pp ON pp.problem_id = p.id
             WHERE p.status = 1
-              AND (
-                  pp.next_review_at IS NULL
-                  OR pp.next_review_at < #{dayEnd}
-                  OR EXISTS (
-                      SELECT 1 FROM review_record today_rr
-                      WHERE today_rr.problem_id = p.id
-                        AND today_rr.reviewed_at >= #{dayStart}
-                        AND today_rr.reviewed_at < #{dayEnd}
-                  )
-              )
-            ORDER BY completed ASC,
-                     COALESCE(p.hot100_order, 2147483647) ASC,
+            ORDER BY COALESCE(p.hot100_order, 2147483647) ASC,
                      p.leetcode_number ASC
             """)
     List<ReviewQueueRow> selectTodayReviewRows(

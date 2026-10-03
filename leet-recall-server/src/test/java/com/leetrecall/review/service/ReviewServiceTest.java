@@ -71,15 +71,15 @@ class ReviewServiceTest {
 
     @Test
     void shouldBuildTodayQueueAndCompletedCount() {
-        ReviewQueueRow pending = queueRow(1L, false, null);
-        ReviewQueueRow completed = queueRow(8L, true, MasteryLevel.KNOWN);
+        ReviewQueueRow completed = queueRow(1L, true, MasteryLevel.KNOWN);
+        ReviewQueueRow pending = queueRow(8L, false, null);
         when(problemMapper.selectTodayReviewRows(any(LocalDateTime.class), any(LocalDateTime.class)))
-                .thenReturn(List.of(pending, completed));
+                .thenReturn(List.of(completed, pending));
         ProblemTagNameVO pendingTag = new ProblemTagNameVO();
-        pendingTag.setProblemId(1L);
+        pendingTag.setProblemId(8L);
         pendingTag.setName("递归");
         ProblemTagNameVO completedTag = new ProblemTagNameVO();
-        completedTag.setProblemId(8L);
+        completedTag.setProblemId(1L);
         completedTag.setName("树");
         when(problemTagMapper.selectTagNamesByProblemIds(List.of(1L, 8L)))
                 .thenReturn(List.of(pendingTag, completedTag));
@@ -90,7 +90,26 @@ class ReviewServiceTest {
 
         assertThat(result.total()).isEqualTo(2);
         assertThat(result.completed()).isEqualTo(1);
-        assertThat(result.items().get(1).todayResult()).isEqualTo(MasteryLevel.KNOWN);
+        assertThat(result.items()).extracting("problemId").containsExactly(1L, 8L);
+        assertThat(result.items().get(0).todayResult()).isEqualTo(MasteryLevel.KNOWN);
+    }
+
+    @Test
+    void shouldExposeAllHundredQueueRowsInMapperOrder() {
+        List<ReviewQueueRow> rows = java.util.stream.IntStream.rangeClosed(1, 100)
+                .mapToObj(number -> queueRow((long) number, number == 1, number == 1 ? MasteryLevel.KNOWN : null))
+                .toList();
+        when(problemMapper.selectTodayReviewRows(any(LocalDateTime.class), any(LocalDateTime.class)))
+                .thenReturn(rows);
+        when(problemTagMapper.selectTagNamesByProblemIds(any())).thenReturn(List.of());
+        when(problemMapper.selectLastActivityByProblemIds(any())).thenReturn(List.of());
+
+        var result = reviewService.getTodayQueue();
+
+        assertThat(result.total()).isEqualTo(100);
+        assertThat(result.completed()).isEqualTo(1);
+        assertThat(result.items()).extracting("leetcodeNumber")
+                .containsExactlyElementsOf(java.util.stream.IntStream.rangeClosed(1, 100).boxed().toList());
     }
 
     @Test
