@@ -367,7 +367,20 @@ useReviewShortcuts({
 
 @media (max-width: 720px) {
   .review-page {
+    display: block;
     padding: 20px 12px calc(88px + env(safe-area-inset-bottom));
+  }
+
+  .review-main {
+    min-height: 0;
+    overflow: visible;
+    grid-template-rows: auto auto;
+  }
+
+  .review-scroll {
+    min-height: auto;
+    overflow: visible;
+    overscroll-behavior: auto;
   }
 
   .review-aside { grid-template-columns: 1fr; }
