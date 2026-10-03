@@ -1,19 +1,20 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { BrainCircuit, FileText, Lightbulb } from 'lucide-vue-next'
+import { BrainCircuit, FileText, NotebookPen } from 'lucide-vue-next'
+import ProblemNotePanel from '@/components/review/ProblemNotePanel.vue'
 import MarkdownContent from '@/components/common/MarkdownContent.vue'
 import type { RecallQuestion } from '@/types/problem'
 
 const props = defineProps<{
+  problemId: number
   descriptionMarkdown: string
   recallQuestions: RecallQuestion[]
-  coreIdea: string
 }>()
 
 const TABS = [
   { key: 'description', label: '题目描述', icon: FileText },
   { key: 'recall', label: '回忆问答', icon: BrainCircuit },
-  { key: 'coreIdea', label: '核心思路', icon: Lightbulb },
+  { key: 'notes', label: '我的笔记', icon: NotebookPen },
 ] as const
 
 type TabKey = (typeof TABS)[number]['key']
@@ -25,7 +26,7 @@ const revealedAnswers = ref<number[]>([])
 const emptyHint = computed(() => {
   if (activeTab.value === 'description') return '这道题还没有题目描述'
   if (activeTab.value === 'recall') return '这道题还没有回忆问答'
-  return '这道题还没有核心思路'
+  return '这道题还没有笔记'
 })
 
 function toggleAnswer(id: number): void {
@@ -77,9 +78,9 @@ function toggleAnswer(id: number): void {
           <MarkdownContent v-else :markdown="item.answer ?? ''" />
         </li>
       </ul>
-      <MarkdownContent
-        v-else-if="activeTab === 'coreIdea' && props.coreIdea.trim()"
-        :markdown="props.coreIdea"
+      <ProblemNotePanel
+        v-else-if="activeTab === 'notes'"
+        :problem-id="props.problemId"
       />
       <p v-else class="pane-empty">{{ emptyHint }}</p>
     </div>

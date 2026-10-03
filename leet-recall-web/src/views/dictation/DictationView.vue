@@ -246,9 +246,9 @@ async function openRecord(recordId: number): Promise<void> {
         <div class="dictation-layout" :class="`view-${activeView}`">
           <DictationProblemPanel
             class="problem-column"
+            :problem-id="currentProblem.problemId"
             :description-markdown="currentProblem.descriptionMarkdown"
             :recall-questions="currentProblem.recallQuestions"
-            :core-idea="currentProblem.coreIdea"
           />
 
           <section class="editor-column">

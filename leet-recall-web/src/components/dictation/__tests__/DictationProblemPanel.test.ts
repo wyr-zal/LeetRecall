@@ -9,9 +9,9 @@ const QUESTIONS = [
 function mountPanel(overrides: Record<string, unknown> = {}) {
   return mount(DictationProblemPanel, {
     props: {
+      problemId: 1,
       descriptionMarkdown: '给定两个字符串 s 和 p',
       recallQuestions: QUESTIONS,
-      coreIdea: '滑动窗口',
       ...overrides,
     },
   })
@@ -24,13 +24,33 @@ async function selectTab(wrapper: ReturnType<typeof mountPanel>, label: string):
 }
 
 describe('DictationProblemPanel', () => {
-  it('opens on the description tab and switches to the other panes', async () => {
+  it('opens on the description tab by default', () => {
     const wrapper = mountPanel()
 
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('给定两个字符串 s 和 p')
+  })
 
-    await selectTab(wrapper, '核心思路')
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('滑动窗口')
+  it('replaces core idea with the current problem notes tab', async () => {
+    const wrapper = mount(DictationProblemPanel, {
+      props: { problemId: 438, descriptionMarkdown: '题目描述', recallQuestions: QUESTIONS },
+      global: {
+        stubs: {
+          ProblemNotePanel: {
+            props: ['problemId'],
+            template: '<div data-test="problem-note-panel" :data-problem-id="problemId" />',
+          },
+        },
+      },
+    })
+
+    const tabLabels = wrapper.findAll('[role="tab"]').map((tab) => tab.text())
+    expect(tabLabels).toContain('我的笔记')
+    expect(tabLabels).not.toContain('核心思路')
+    expect(wrapper.find('[data-test="problem-note-panel"]').exists()).toBe(false)
+
+    await selectTab(wrapper, '我的笔记')
+
+    expect(wrapper.get('[data-test="problem-note-panel"]').attributes('data-problem-id')).toBe('438')
   })
 
   it('keeps recall answers hidden until they are asked for', async () => {
@@ -47,7 +67,7 @@ describe('DictationProblemPanel', () => {
   })
 
   it('explains which tab is empty instead of showing a blank pane', async () => {
-    const wrapper = mountPanel({ descriptionMarkdown: '', recallQuestions: [], coreIdea: '   ' })
+    const wrapper = mountPanel({ descriptionMarkdown: '', recallQuestions: [] })
 
     expect(wrapper.get('.pane-empty').text()).toBe('这道题还没有题目描述')
 
