@@ -54,6 +54,8 @@ function toggleAnswer(id: number): void {
       </button>
     </nav>
 
+    <slot name="header" />
+
     <div
       class="pane-body"
       role="tabpanel"

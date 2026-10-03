@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { ArrowLeft, Moon, Sun } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { dictationApi } from '@/api/dictation'
 import { useDictationStore } from '@/stores/dictation'
 import { isEditableTarget } from '@/composables/useReviewShortcuts'
+import { useTheme } from '@/composables/useTheme'
 import DictationProgress from '@/components/dictation/DictationProgress.vue'
 import DictationProblemHeader from '@/components/dictation/DictationProblemHeader.vue'
 import DictationProblemPanel from '@/components/dictation/DictationProblemPanel.vue'
@@ -28,6 +30,7 @@ const CodeBlankEditor = defineAsyncComponent({
 
 const store = useDictationStore()
 const annotationStore = useCodeAnnotationStore()
+const { themeMode, toggleTheme } = useTheme()
 const {
   todayQueue,
   currentProblemId,
@@ -61,9 +64,7 @@ const pickerOpen = ref(false)
 const drawerOpen = ref(false)
 // 窄屏（≤720px）在题目/代码两栏间二选一；宽屏两栏并排，该值由 CSS 忽略。
 const activeView = ref<'problem' | 'code'>('problem')
-const progressPercent = computed(() => todayQueue.value.length
-  ? ((currentIndex.value + 1) / todayQueue.value.length) * 100
-  : 0)
+const themeToggleLabel = computed(() => themeMode.value === 'dark' ? '切换浅色主题' : '切换深色主题')
 
 onMounted(() => {
   void store.loadQueue()
@@ -190,6 +191,46 @@ async function openRecord(recordId: number): Promise<void> {
 
 <template>
   <main class="dictation-page">
+    <header class="dictation-session-bar">
+      <div class="session-start">
+        <RouterLink class="back-link" to="/quick-review" aria-label="返回工作台" title="返回工作台">
+          <ArrowLeft :size="17" aria-hidden="true" />
+          <span>返回</span>
+        </RouterLink>
+        <span class="session-divider" aria-hidden="true" />
+        <div class="session-brand">
+          <strong>LeetRecall</strong>
+          <span>默写训练</span>
+        </div>
+      </div>
+
+      <DictationProgress
+        v-if="currentProblem"
+        class="session-controls"
+        :current="currentIndex + 1"
+        :total="todayQueue.length"
+        :annotation-count="answerVisible ? resolvedAnnotations.length : 0"
+        :annotations-visible="answerVisible"
+        @previous="store.move(-1)"
+        @next="store.move(1)"
+        @pick="pickerOpen = true"
+        @annotations="toggleAnnotations"
+      />
+
+      <button
+        class="theme-toggle"
+        type="button"
+        :aria-label="themeToggleLabel"
+        :title="themeToggleLabel"
+        :aria-pressed="themeMode === 'light'"
+        @click="toggleTheme"
+      >
+        <Sun v-if="themeMode === 'dark'" :size="17" aria-hidden="true" />
+        <Moon v-else :size="17" aria-hidden="true" />
+        <span>{{ themeMode === 'dark' ? '浅色' : '深色' }}</span>
+      </button>
+    </header>
+
     <LoadingState v-if="loading" />
     <ErrorState v-else-if="error && !currentProblem" :message="error" @retry="store.loadQueue" />
     <EmptyState
@@ -202,26 +243,6 @@ async function openRecord(recordId: number): Promise<void> {
     <template v-else-if="currentProblem">
       <LoadingState v-if="detailLoading" />
       <template v-else>
-        <div class="dictation-header">
-          <DictationProblemHeader
-            :number="currentProblem.leetcodeNumber"
-            :title="currentProblem.title"
-            :tags="currentProblem.tags"
-            :progress="progressPercent"
-          >
-            <DictationProgress
-              :current="currentIndex + 1"
-              :total="todayQueue.length"
-              :annotation-count="answerVisible ? resolvedAnnotations.length : 0"
-              :annotations-visible="answerVisible"
-              @previous="store.move(-1)"
-              @next="store.move(1)"
-              @pick="pickerOpen = true"
-              @annotations="toggleAnnotations"
-            />
-          </DictationProblemHeader>
-        </div>
-
         <nav class="view-switch" role="tablist" aria-label="默写视图">
           <button
             type="button"
@@ -249,7 +270,16 @@ async function openRecord(recordId: number): Promise<void> {
             :problem-id="currentProblem.problemId"
             :description-markdown="currentProblem.descriptionMarkdown"
             :recall-questions="currentProblem.recallQuestions"
-          />
+          >
+            <template #header>
+              <DictationProblemHeader
+                :number="currentProblem.leetcodeNumber"
+                :title="currentProblem.title"
+                :difficulty="currentProblem.difficulty"
+                :tags="currentProblem.tags"
+              />
+            </template>
+          </DictationProblemPanel>
 
           <section class="editor-column">
             <CodeBlankEditor
@@ -331,31 +361,55 @@ async function openRecord(recordId: number): Promise<void> {
 
 <style scoped>
 .dictation-page {
+  --dictation-session-height: 54px;
   display: flex;
-  height: calc(var(--viewport-height) - var(--topbar-height));
+  height: var(--viewport-height);
   flex-direction: column;
   overflow: hidden;
+  background: var(--bg-primary);
 }
 
-.dictation-header { flex: 0 0 auto; padding: 13px 22px 0; }
-.dictation-header :deep(.header) { padding-bottom: 12px; margin-bottom: 0; }
+.dictation-session-bar {
+  z-index: 10;
+  display: flex;
+  height: var(--dictation-session-height);
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 0 16px;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-low);
+}
+
+.session-start { display: flex; min-width: 0; flex: 0 0 auto; align-items: center; gap: 12px; }
+.back-link { display: inline-flex; min-height: 38px; align-items: center; padding: 0 10px; gap: 6px; color: var(--text-secondary); text-decoration: none; border: 1px solid var(--border-primary); border-radius: 7px; background: var(--bg-card); }
+.back-link:hover { color: var(--text-primary); border-color: var(--border-hover); background: var(--bg-card-hover); }
+.session-divider { width: 1px; height: 24px; background: var(--border-secondary); }
+.session-brand { display: grid; gap: 1px; white-space: nowrap; }
+.session-brand strong { font-size: calc(13px * var(--ui-font-ratio)); font-weight: 680; line-height: 1.2; }
+.session-brand span { color: var(--text-muted); font-size: calc(10px * var(--ui-font-ratio)); }
+.theme-toggle { display: inline-flex; min-width: 38px; min-height: 38px; flex: 0 0 auto; align-items: center; justify-content: center; padding: 0 9px; gap: 6px; color: var(--text-secondary); border: 1px solid var(--border-primary); border-radius: 7px; background: var(--bg-card); }
+.theme-toggle:hover { color: var(--text-primary); border-color: var(--border-hover); background: var(--bg-card-hover); }
+.dictation-session-bar > .theme-toggle { margin-left: auto; }
+.session-controls { min-width: 0; }
 
 /* 左题面右代码，两栏各自滚动撑满视口，页面本身不滚动。 */
 .dictation-layout {
   display: grid;
   min-height: 0;
   flex: 1;
-  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  grid-template-columns: minmax(0, 0.96fr) minmax(0, 1.04fr);
   grid-template-rows: minmax(0, 1fr);
 }
 
 .problem-column { min-width: 0; min-height: 0; border-right: 1px solid var(--border-secondary); }
 
-.editor-column { display: flex; min-width: 0; min-height: 0; flex-direction: column; padding: 16px 22px 18px; gap: 12px; overflow: hidden; }
+.editor-column { display: flex; min-width: 0; min-height: 0; flex-direction: column; padding: 12px 14px 10px; gap: 8px; overflow: hidden; }
 .editor-column > .editor-slot { min-height: 0; flex: 1; }
-.editor-column > .history { flex: 0 0 auto; max-height: 42%; margin-top: 0; overflow-y: auto; }
+.editor-column > .history { flex: 0 0 auto; max-height: min(240px, 30%); margin-top: 0; overflow-y: auto; }
 
-.annotation-drawer { position: fixed; z-index: 40; top: var(--topbar-height); right: 0; bottom: 0; width: min(380px, 92vw); overflow: auto; padding: 16px; border-left: 1px solid var(--border-primary); background: var(--bg-primary); box-shadow: var(--shadow-high); }
+.annotation-drawer { position: fixed; z-index: 40; top: var(--dictation-session-height); right: 0; bottom: 0; width: min(380px, 92vw); overflow: auto; padding: 16px; border-left: 1px solid var(--border-primary); background: var(--bg-primary); box-shadow: var(--shadow-high); }
 .score-message { display: flex; align-items: baseline; gap: 11px; padding: 12px 14px; border: 1px solid var(--border-primary); border-radius: 8px; background: var(--bg-input); box-shadow: inset 3px 0 0 var(--primary); }
 .score-message strong { color: var(--primary); font-size: calc(19px * var(--ui-font-ratio)); }.score-message span { color: var(--text-secondary); font-size: calc(13px * var(--ui-font-ratio)); }.score-message small { color: var(--warning); font-size: calc(11px * var(--ui-font-ratio)); }
 .score-message .next-problem { display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 0 12px; color: var(--on-primary); border: 1px solid var(--primary); border-radius: 7px; background: var(--primary); }
@@ -367,17 +421,24 @@ async function openRecord(recordId: number): Promise<void> {
   .dictation-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
 @media (max-width: 720px) {
-  .dictation-page { height: calc(var(--viewport-height) - var(--topbar-height) - 64px - env(safe-area-inset-bottom)); }
-  .dictation-header { padding: 12px 14px 0; }
-  .view-switch { display: flex; flex: 0 0 auto; padding: 10px 14px 0; gap: 6px; }
-  .view-switch button { min-height: 38px; flex: 1; color: var(--text-muted); font-size: calc(13px * var(--ui-font-ratio)); font-weight: 620; border: 1px solid var(--border-primary); border-radius: 8px; background: transparent; }
+  .dictation-page { --dictation-session-height: calc(50px + env(safe-area-inset-top)); }
+  .dictation-session-bar { padding: env(safe-area-inset-top) 8px 0; gap: 6px; }
+  .session-start { gap: 5px; }
+  .back-link { width: 40px; min-height: 40px; justify-content: center; padding: 0; }
+  .back-link span, .session-divider, .session-brand { display: none; }
+  .theme-toggle { width: 40px; min-height: 40px; padding: 0; }
+  .theme-toggle span { display: none; }
+  .dictation-session-bar > .theme-toggle { margin-left: 0; }
+  .view-switch { display: flex; flex: 0 0 auto; padding: 8px 10px 0; gap: 6px; }
+  .view-switch button { min-height: 42px; flex: 1; color: var(--text-muted); font-size: calc(13px * var(--ui-font-ratio)); font-weight: 620; border: 1px solid var(--border-primary); border-radius: 7px; background: transparent; }
   .view-switch button.active { color: var(--on-primary); border-color: var(--primary); background: var(--primary); }
   /* 单栏栅格：隐藏的那一栏不能继续占轨道，否则可见栏只剩半宽。 */
-  .dictation-layout { padding: 10px 14px 12px; gap: 10px; grid-template-columns: minmax(0, 1fr); }
+  .dictation-layout { padding: 8px 10px 10px; gap: 8px; grid-template-columns: minmax(0, 1fr); }
   .problem-column { display: none; border-right: 0; }
   .editor-column { display: none; padding: 0; }
   .dictation-layout.view-problem .problem-column { display: flex; }
   .dictation-layout.view-code .editor-column { display: flex; }
+  .annotation-drawer { top: var(--dictation-session-height); bottom: env(safe-area-inset-bottom); }
   .score-message { align-items: flex-start; flex-direction: column; }.score-message small { margin-left: 0; }
 }
 </style>

@@ -42,10 +42,10 @@ function formatDuration(seconds: number): string {
 </template>
 
 <style scoped>
-.history { overflow: hidden; background: var(--bg-card); }
-.history-toggle { display: flex; align-items: center; gap: 9px; width: 100%; padding: 14px 20px; color: var(--text-primary); text-align: left; border: 0; background: transparent; }
+.history { overflow: hidden; border: 1px solid var(--border-secondary); border-radius: 7px; background: var(--bg-card); }
+.history-toggle { display: flex; min-height: 42px; align-items: center; gap: 8px; width: 100%; padding: 0 12px; color: var(--text-primary); text-align: left; border: 0; background: transparent; }
 .history-toggle:hover { background: var(--bg-card-hover); }
-h2 { margin: 0; font-size: calc(15px * var(--ui-font-ratio)); font-weight: 650; }
+h2 { margin: 0; font-size: calc(13px * var(--ui-font-ratio)); font-weight: 650; }
 .count { color: var(--text-muted); font-size: calc(12px * var(--ui-font-ratio)); font-variant-numeric: tabular-nums; }
 .chevron { color: var(--text-muted); transition: transform 150ms ease; }
 .chevron.expanded { transform: rotate(90deg); }

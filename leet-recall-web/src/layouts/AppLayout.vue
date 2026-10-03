@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import AppSidebar from '@/components/common/AppSidebar.vue'
 import AppTopbar from '@/components/common/AppTopbar.vue'
 import { readStorage, writeStorage } from '@/utils/storage'
 
 const collapsed = ref(readStorage('leet-recall:sidebar-collapsed', false))
+const route = useRoute()
+const dictationFocus = computed(() => route.path === '/dictation')
 
 function toggleSidebar(): void {
   collapsed.value = !collapsed.value
@@ -13,10 +16,10 @@ function toggleSidebar(): void {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'is-collapsed': collapsed }">
-    <AppSidebar :collapsed="collapsed" @toggle="toggleSidebar" />
+  <div class="app-shell" :class="{ 'is-collapsed': collapsed, 'is-dictation-focus': dictationFocus }">
+    <AppSidebar v-if="!dictationFocus" data-test="global-sidebar" :collapsed="collapsed" @toggle="toggleSidebar" />
     <div class="app-stage">
-      <AppTopbar />
+      <AppTopbar v-if="!dictationFocus" data-test="global-topbar" />
       <div class="app-content">
         <RouterView v-slot="{ Component }">
           <KeepAlive :include="['QuickReviewView', 'DictationView']">
@@ -41,15 +44,35 @@ function toggleSidebar(): void {
   --current-sidebar-width: 72px;
 }
 
+.app-shell.is-dictation-focus {
+  display: block;
+  height: var(--viewport-height);
+  min-height: 0;
+}
+
 .app-stage {
   min-width: 0;
   background: var(--bg-primary);
   box-shadow: var(--shadow-medium);
 }
 
+.is-dictation-focus .app-stage,
+.is-dictation-focus .app-content {
+  height: var(--viewport-height);
+  min-height: 0;
+}
+
+.is-dictation-focus .app-stage {
+  box-shadow: none;
+}
+
 .app-content {
   min-height: calc(var(--viewport-height) - var(--topbar-height));
   border-left: 1px solid var(--border-highlight);
+}
+
+.is-dictation-focus .app-content {
+  border-left: 0;
 }
 
 @media (max-width: 1279px) {

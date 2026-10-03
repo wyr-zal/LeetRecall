@@ -69,6 +69,21 @@ describe('AppLayout 路由切换与页面缓存', () => {
     await flushPromises()
     expect(wrapper.find('.dict-stub').exists()).toBe(true)
     expect(wrapper.find('.quick-stub').exists()).toBe(false)
+    expect(wrapper.find('.app-shell').classes()).toContain('is-dictation-focus')
+    expect(wrapper.find('[data-test="global-sidebar"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="global-topbar"]').exists()).toBe(false)
+  })
+
+  it('离开默写模式后恢复全局导航与工作台布局', async () => {
+    const { wrapper, router } = await mountAt('/dictation')
+    expect(wrapper.find('.app-shell').classes()).toContain('is-dictation-focus')
+
+    await router.push('/quick-review')
+    await flushPromises()
+
+    expect(wrapper.find('.app-shell').classes()).not.toContain('is-dictation-focus')
+    expect(wrapper.find('[data-test="global-sidebar"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="global-topbar"]').exists()).toBe(true)
   })
 
   it('切回快速复习时保留组件内部状态（keep-alive 生效）', async () => {
