@@ -1,47 +1,43 @@
 <script setup lang="ts">
 defineProps<{ loading: boolean }>()
-defineEmits<{ select: [result: 'FORGOT' | 'FUZZY' | 'KNOWN'] }>()
+const emit = defineEmits<{ select: [result: 'FORGOT' | 'FUZZY' | 'KNOWN'] }>()
+
+function selectResult(event: Event): void {
+  const select = event.currentTarget
+  if (!(select instanceof HTMLSelectElement)) return
+
+  const result = select.value
+  if (result === 'FORGOT' || result === 'FUZZY' || result === 'KNOWN') {
+    emit('select', result)
+    select.value = ''
+  }
+}
 </script>
 
 <template>
   <div class="result-buttons" aria-label="选择掌握状态">
-    <button type="button" class="forgot" :disabled="loading" @click="$emit('select', 'FORGOT')">
-      <kbd>1</kbd><span>不会</span>
-    </button>
-    <button type="button" class="fuzzy" :disabled="loading" @click="$emit('select', 'FUZZY')">
-      <kbd>2</kbd><span>模糊</span>
-    </button>
-    <button type="button" class="known" :disabled="loading" @click="$emit('select', 'KNOWN')">
-      <kbd>3</kbd><span>{{ loading ? '保存中' : '会' }}</span>
-    </button>
+    <select aria-label="标记本题掌握程度" :disabled="loading" @change="selectResult">
+      <option value="" selected disabled>{{ loading ? '保存中…' : '选择掌握程度' }}</option>
+      <option value="FORGOT">1 · 不会</option>
+      <option value="FUZZY">2 · 模糊</option>
+      <option value="KNOWN">3 · 会</option>
+    </select>
   </div>
 </template>
 
 <style scoped>
-.result-buttons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; }
-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
+.result-buttons { margin-top: 16px; }
+select {
+  width: 100%;
   min-height: 48px;
+  padding: 0 12px;
+  color: var(--text-primary);
   font-weight: 620;
-  border: 1px solid currentColor;
+  border: 1px solid var(--border-primary);
   border-radius: 8px;
   background: var(--bg-input);
   box-shadow: none;
 }
-button:hover:not(:disabled) { transform: translateY(-1px); }
-button:active:not(:disabled) { transform: translateY(0); }
-button:disabled { opacity: 0.55; }
-.forgot { color: var(--danger); border-color: rgba(255, 55, 95, 0.5); }
-.fuzzy { color: var(--warning); border-color: rgba(255, 192, 30, 0.5); }
-.known { color: var(--success); border-color: rgba(0, 184, 163, 0.5); }
-.forgot:hover:not(:disabled) { background: rgba(255, 55, 95, 0.1); }
-.fuzzy:hover:not(:disabled) { background: rgba(255, 192, 30, 0.1); }
-.known:hover:not(:disabled) { background: rgba(0, 184, 163, 0.1); }
-kbd { padding: 2px 5px; color: inherit; font-size: calc(10px * var(--ui-font-ratio)); border: 1px solid currentColor; border-radius: 4px; opacity: 0.62; }
-@media (max-width: 560px) {
-  .result-buttons { grid-template-columns: 1fr; }
-}
+select:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+select:disabled { opacity: 0.55; }
 </style>
