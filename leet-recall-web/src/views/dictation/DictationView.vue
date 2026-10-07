@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
-import { ArrowLeft, Moon, Sun } from 'lucide-vue-next'
+import { ArrowLeft, FileInput, Moon, Sun, Zap } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { dictationApi } from '@/api/dictation'
 import { useDictationStore } from '@/stores/dictation'
@@ -217,18 +217,26 @@ async function openRecord(recordId: number): Promise<void> {
         @annotations="toggleAnnotations"
       />
 
-      <button
-        class="theme-toggle"
-        type="button"
-        :aria-label="themeToggleLabel"
-        :title="themeToggleLabel"
-        :aria-pressed="themeMode === 'light'"
-        @click="toggleTheme"
-      >
-        <Sun v-if="themeMode === 'dark'" :size="17" aria-hidden="true" />
-        <Moon v-else :size="17" aria-hidden="true" />
-        <span>{{ themeMode === 'dark' ? '浅色' : '深色' }}</span>
-      </button>
+      <div class="session-tools">
+        <RouterLink class="session-link" to="/quick-review" aria-label="快速复习" title="快速复习">
+          <Zap :size="17" aria-hidden="true" />
+        </RouterLink>
+        <RouterLink class="session-link" to="/problem-import" aria-label="导入题目" title="导入题目">
+          <FileInput :size="17" aria-hidden="true" />
+        </RouterLink>
+        <button
+          class="theme-toggle"
+          type="button"
+          :aria-label="themeToggleLabel"
+          :title="themeToggleLabel"
+          :aria-pressed="themeMode === 'light'"
+          @click="toggleTheme"
+        >
+          <Sun v-if="themeMode === 'dark'" :size="17" aria-hidden="true" />
+          <Moon v-else :size="17" aria-hidden="true" />
+          <span>{{ themeMode === 'dark' ? '浅色' : '深色' }}</span>
+        </button>
+      </div>
     </header>
 
     <LoadingState v-if="loading" />
@@ -391,7 +399,10 @@ async function openRecord(recordId: number): Promise<void> {
 .session-brand span { color: var(--text-muted); font-size: calc(10px * var(--ui-font-ratio)); }
 .theme-toggle { display: inline-flex; min-width: 38px; min-height: 38px; flex: 0 0 auto; align-items: center; justify-content: center; padding: 0 9px; gap: 6px; color: var(--text-secondary); border: 1px solid var(--border-primary); border-radius: 7px; background: var(--bg-card); }
 .theme-toggle:hover { color: var(--text-primary); border-color: var(--border-hover); background: var(--bg-card-hover); }
-.dictation-session-bar > .theme-toggle { margin-left: auto; }
+.session-tools { display: flex; min-width: 0; flex: 0 0 auto; align-items: center; margin-left: auto; gap: 6px; }
+.session-link { display: inline-flex; width: 38px; min-height: 38px; flex: 0 0 auto; align-items: center; justify-content: center; color: var(--text-secondary); border: 1px solid var(--border-primary); border-radius: 7px; background: var(--bg-card); }
+.session-link:hover { color: var(--text-primary); border-color: var(--border-hover); background: var(--bg-card-hover); }
+.session-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .session-controls { min-width: 0; }
 
 /* 左题面右代码，两栏各自滚动撑满视口，页面本身不滚动。 */
@@ -428,7 +439,8 @@ async function openRecord(recordId: number): Promise<void> {
   .back-link span, .session-divider, .session-brand { display: none; }
   .theme-toggle { width: 40px; min-height: 40px; padding: 0; }
   .theme-toggle span { display: none; }
-  .dictation-session-bar > .theme-toggle { margin-left: 0; }
+  /* 窄屏顶栏放不下额外入口：快速复习由「返回」承担，导入题目走底部导航。 */
+  .session-link { display: none; }
   .view-switch { display: flex; flex: 0 0 auto; padding: 8px 10px 0; gap: 6px; }
   .view-switch button { min-height: 42px; flex: 1; color: var(--text-muted); font-size: calc(13px * var(--ui-font-ratio)); font-weight: 620; border: 1px solid var(--border-primary); border-radius: 7px; background: transparent; }
   .view-switch button.active { color: var(--on-primary); border-color: var(--primary); background: var(--primary); }
