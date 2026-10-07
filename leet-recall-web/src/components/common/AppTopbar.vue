@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Braces, ChevronLeft, ChevronRight, FileInput, Flame, List, Moon, Search, Sun } from 'lucide-vue-next'
+import { Braces, ChevronLeft, ChevronRight, FileInput, Flame, List, Moon, MoreHorizontal, Search, Sun } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { reviewApi } from '@/api/review'
 import { useQuickReviewStore } from '@/stores/quickReview'
@@ -20,6 +20,7 @@ const navigationBusy = computed(() => reviewStore.loading || reviewStore.detailL
 
 function openTool(tool: 'picker' | 'import'): void {
   setSettingsMenuOpen(false)
+  moreOpen.value = false
   const query = isWorkspace.value ? { ...route.query } : {}
   delete query.picker
   delete query.import
@@ -27,7 +28,16 @@ function openTool(tool: 'picker' | 'import'): void {
 }
 
 function toggleSettings(): void {
-  setSettingsMenuOpen(!settingsMenuOpen.value)
+  const next = !settingsMenuOpen.value
+  if (next) moreOpen.value = false
+  setSettingsMenuOpen(next)
+}
+
+/** 手机端把低频工具收进 ⋯ 面板；与设置下拉互斥，避免两块浮层叠在同一位置。 */
+function toggleMore(): void {
+  const next = !moreOpen.value
+  if (next) setSettingsMenuOpen(false)
+  moreOpen.value = next
 }
 
 /** 旧 /settings 地址只用来打开一次下拉，随即把参数从地址栏清掉。 */
@@ -45,11 +55,15 @@ const searchOpen = ref(false)
 const searching = ref(false)
 const activeIndex = ref(-1)
 const searchWrap = ref<HTMLElement | null>(null)
+const actionsWrap = ref<HTMLElement | null>(null)
+const moreTrigger = ref<HTMLButtonElement | null>(null)
 const streak = ref(0)
+const moreOpen = ref(false)
 let searchTimer: ReturnType<typeof setTimeout> | undefined
 
 onMounted(async () => {
   document.addEventListener('click', closeSearchWhenClickedOutside)
+  document.addEventListener('keydown', closeMoreOnEscape)
   try {
     streak.value = await reviewApi.getReviewStreak()
   } catch {
@@ -63,7 +77,12 @@ watch(() => route.query.settings, (value) => {
   if (value === '1') applySettingsQuery()
 })
 
-onBeforeUnmount(() => document.removeEventListener('click', closeSearchWhenClickedOutside))
+watch(() => route.fullPath, () => { moreOpen.value = false })
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', closeSearchWhenClickedOutside)
+  document.removeEventListener('keydown', closeMoreOnEscape)
+})
 
 function handleInput(): void {
   if (searchTimer) clearTimeout(searchTimer)
@@ -106,7 +125,16 @@ function handleSearchKeydown(event: KeyboardEvent): void {
 }
 
 function closeSearchWhenClickedOutside(event: MouseEvent): void {
-  if (searchWrap.value && !searchWrap.value.contains(event.target as Node)) searchOpen.value = false
+  const target = event.target as Node
+  if (searchWrap.value && !searchWrap.value.contains(target)) searchOpen.value = false
+  if (moreOpen.value && !actionsWrap.value?.contains(target) && !searchWrap.value?.contains(target)) moreOpen.value = false
+}
+
+/** ⋯ 面板打开时 Esc 关闭，并把焦点还给触发器。 */
+function closeMoreOnEscape(event: KeyboardEvent): void {
+  if (event.key !== 'Escape' || !moreOpen.value) return
+  moreOpen.value = false
+  moreTrigger.value?.focus({ preventScroll: true })
 }
 
 async function selectProblem(problem: ProblemSearchItem): Promise<void> {
@@ -119,15 +147,15 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
 </script>
 
 <template>
-  <header class="topbar">
+  <header class="topbar" :class="{ 'more-open': moreOpen }">
     <div class="topbar-start">
       <RouterLink class="topbar-brand" to="/quick-review" aria-label="LeetRecall 学习工作台">
         <Braces :size="21" aria-hidden="true" />
         <strong>LeetRecall</strong>
       </RouterLink>
       <nav v-if="isWorkspace" class="workspace-controls" aria-label="题目导航">
-        <button type="button" aria-label="选择题目" title="选择题目" :disabled="navigationBusy" @click="openTool('picker')"><List :size="18" /><span>选题</span></button>
-        <span class="problem-counter">{{ Math.max(0, reviewStore.currentIndex + 1) }} / {{ reviewStore.todayQueue.length }}</span>
+        <button class="picker-button" type="button" aria-label="选择题目" title="选择题目" :disabled="navigationBusy" @click="openTool('picker')"><List :size="18" /><span>选题</span></button>
+        <button class="problem-counter" type="button" aria-label="选择题目" title="选择题目" :disabled="navigationBusy" @click="openTool('picker')">{{ Math.max(0, reviewStore.currentIndex + 1) }} / {{ reviewStore.todayQueue.length }}</button>
         <button type="button" aria-label="上一题" :disabled="navigationBusy || !reviewStore.todayQueue.length" @click="reviewStore.move(-1)"><ChevronLeft :size="18" /></button>
         <button type="button" aria-label="下一题" :disabled="navigationBusy || !reviewStore.todayQueue.length" @click="reviewStore.move(1)"><ChevronRight :size="18" /></button>
       </nav>
@@ -143,7 +171,7 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
           :aria-activedescendant="activeIndex >= 0 ? `global-search-option-${activeIndex}` : undefined"
           @input="handleInput"
           @focus="searchOpen = results.length > 0"
-          @keydown.esc="searchOpen = false"
+          @keydown.esc.stop="searchOpen = false"
           @keydown="handleSearchKeydown"
         >
         <span v-if="searching" class="searching">检索中</span>
@@ -167,25 +195,30 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
       </div>
     </div>
 
-    <div class="topbar-actions">
-      <button class="tool-button" type="button" aria-label="导入题目" title="导入题目" :disabled="navigationBusy" @click="openTool('import')"><FileInput :size="18" /><span>导入</span></button>
-      <SettingsMenu :open="settingsMenuOpen" @toggle="toggleSettings" @close="setSettingsMenuOpen(false)" />
-      <div class="streak" aria-label="连续复习天数">
-        <Flame :size="19" :stroke-width="2" />
-        <span>连续 <strong>{{ streak }}</strong> 天</span>
+    <div id="workspace-tabs-slot" class="tabs-slot" />
+
+    <div ref="actionsWrap" class="topbar-actions">
+      <button ref="moreTrigger" class="tool-button more-trigger" type="button" :aria-expanded="moreOpen" aria-controls="more-panel" aria-label="更多工具" title="更多工具" @click="toggleMore"><MoreHorizontal :size="18" /></button>
+      <div id="more-panel" class="actions-body">
+        <button class="tool-button" type="button" aria-label="导入题目" title="导入题目" :disabled="navigationBusy" @click="openTool('import')"><FileInput :size="18" /><span>导入</span></button>
+        <SettingsMenu :open="settingsMenuOpen" @toggle="toggleSettings" @close="setSettingsMenuOpen(false)" />
+        <div class="streak" aria-label="连续复习天数">
+          <Flame :size="19" :stroke-width="2" />
+          <span>连续 <strong>{{ streak }}</strong> 天</span>
+        </div>
+        <button
+          class="theme-toggle"
+          type="button"
+          :aria-label="themeMode === 'dark' ? '切换浅色模式' : '切换深色模式'"
+          :title="themeMode === 'dark' ? '切换浅色模式' : '切换深色模式'"
+          :aria-pressed="themeMode === 'light'"
+          @click="toggleTheme"
+        >
+          <Sun v-if="themeMode === 'dark'" :size="17" aria-hidden="true" />
+          <Moon v-else :size="17" aria-hidden="true" />
+          <span>{{ themeMode === 'dark' ? '浅色' : '深色' }}</span>
+        </button>
       </div>
-      <button
-        class="theme-toggle"
-        type="button"
-        :aria-label="themeMode === 'dark' ? '切换浅色模式' : '切换深色模式'"
-        :title="themeMode === 'dark' ? '切换浅色模式' : '切换深色模式'"
-        :aria-pressed="themeMode === 'light'"
-        @click="toggleTheme"
-      >
-        <Sun v-if="themeMode === 'dark'" :size="17" aria-hidden="true" />
-        <Moon v-else :size="17" aria-hidden="true" />
-        <span>{{ themeMode === 'dark' ? '浅色' : '深色' }}</span>
-      </button>
     </div>
   </header>
 </template>
@@ -245,10 +278,12 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
 .workspace-controls { display: flex; flex: 0 0 auto; align-items: center; gap: 5px; }
 .workspace-controls button, .tool-button { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; min-width: 34px; height: 34px; padding: 0 8px; gap: 6px; color: var(--text-secondary); border: 1px solid var(--border-primary); border-radius: 7px; background: var(--bg-card); text-decoration: none; white-space: nowrap; }
 .workspace-controls button:hover, .tool-button:hover { color: var(--text-primary); background: var(--bg-card-hover); }
-.problem-counter { min-width: 66px; text-align: center; color: var(--text-muted); font-size: calc(12px * var(--ui-font-ratio)); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.workspace-controls .problem-counter { min-width: 66px; height: 34px; padding: 0; color: var(--text-muted); border: 0; background: transparent; font-size: calc(12px * var(--ui-font-ratio)); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.workspace-controls .problem-counter:hover:not(:disabled) { color: var(--text-primary); background: transparent; }
 @media (max-width: 1100px) { .streak span, .tool-button span, .topbar-brand strong, .theme-toggle span { display: none; } }
 
-@media (max-width: 480px) { .problem-counter { display: none; } }
+.tabs-slot { display: none; }
+.more-trigger { display: none; }
 
 .search-wrap {
   position: relative;
@@ -334,12 +369,17 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
 }
 
 .topbar-actions,
+.actions-body,
 .streak {
   display: flex;
   align-items: center;
 }
 
 .topbar-actions {
+  gap: 18px;
+}
+
+.actions-body {
   gap: 18px;
 }
 
@@ -384,54 +424,75 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
 
 @media (max-width: 720px) {
   .topbar {
-    flex-wrap: wrap;
-    padding: env(safe-area-inset-top) 10px 6px;
-    align-content: center;
-    gap: 6px;
+    flex-wrap: nowrap;
+    padding: env(safe-area-inset-top) 8px 0;
+    gap: 4px;
   }
 
-  .topbar-start { flex: 1 1 100%; gap: 8px; }
-  .workspace-controls button, .tool-button { min-width: 44px; height: 44px; }
+  .topbar-start { flex: 0 1 auto; gap: 4px; }
+  .topbar-brand { display: none; }
+  .workspace-controls { gap: 4px; }
+  .workspace-controls button, .tool-button { min-width: 40px; height: 44px; padding: 0 6px; }
   .workspace-controls button span { display: none; }
-  .problem-counter { min-width: 60px; }
-  .topbar-actions { width: 100%; justify-content: flex-end; }
+  .workspace-controls .picker-button { display: none; }
+  .workspace-controls .problem-counter { min-width: 52px; height: 44px; padding: 0 2px; }
 
+  .tabs-slot { display: flex; flex: 1 1 auto; min-width: 0; }
+
+  .topbar-actions { flex: 0 0 auto; }
+  .more-trigger { display: inline-flex; }
+  .more-trigger[aria-expanded="true"] { color: var(--primary); border-color: var(--primary); }
+
+  /* 搜索框改挂顶栏下沿，仅在 ⋯ 展开时出现 */
   .search-wrap {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 8px;
+    left: 8px;
+    z-index: 4;
+    display: none;
     width: auto;
     min-width: 0;
-    max-width: 320px;
-    flex: 1 1 0;
+    max-width: none;
   }
 
-  .search-wrap input {
-    height: 40px;
-  }
+  .topbar.more-open .search-wrap { display: block; }
+  .search-wrap input { height: 44px; }
+  .search-icon { top: 13px; }
+  .searching { top: 13px; }
+  .search-results { top: 50px; }
 
-  .topbar-brand { display: none; }
-
-  .streak span {
+  /* 低频工具收进 ⋯ 面板 */
+  .actions-body {
+    position: absolute;
+    top: calc(100% + 58px);
+    right: 8px;
+    left: 8px;
+    z-index: 3;
     display: none;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--border-primary);
+    border-radius: 12px;
+    background: var(--bg-card);
+    box-shadow: var(--shadow-high);
   }
 
-  .topbar-actions {
-    flex: 0 0 auto;
-    gap: 6px;
-  }
+  .topbar.more-open .actions-body { display: flex; }
 
-  .theme-toggle span {
-    display: none;
-  }
+  .actions-body .tool-button,
+  .actions-body .theme-toggle,
+  .actions-body :deep(.menu-trigger) { justify-content: flex-start; }
+  .actions-body :deep(.menu-trigger) { width: 100%; }
 
-  .theme-toggle {
-    justify-content: center;
-    min-width: 40px;
-    min-height: 40px;
-    padding: 0;
-  }
+  .actions-body .tool-button span,
+  .actions-body .streak span,
+  .actions-body .theme-toggle span,
+  .actions-body :deep(.menu-trigger span) { display: inline; }
 
-  .streak {
-    min-height: 36px;
-    padding: 7px;
-  }
+  .actions-body .theme-toggle { min-width: 0; min-height: 44px; padding: 0 10px; }
+  .actions-body .streak { min-height: 44px; padding: 7px 10px; }
 }
 </style>

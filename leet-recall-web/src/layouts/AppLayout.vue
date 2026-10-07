@@ -22,6 +22,6 @@ const overlayOpen = computed(() => route.path === '/quick-review' && (route.quer
 
 <style scoped>
 .app-shell { --topbar-height: 58px; min-height: var(--viewport-height); background: var(--bg-primary); }
-@media (max-width: 720px) { .app-shell { --topbar-height: calc(106px + env(safe-area-inset-top)); } }
+@media (max-width: 720px) { .app-shell { --topbar-height: calc(48px + env(safe-area-inset-top)); } }
 .app-content { min-width: 0; min-height: calc(var(--viewport-height) - var(--topbar-height)); }
 </style>

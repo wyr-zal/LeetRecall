@@ -27,6 +27,11 @@ function detail(problemId: number) {
 }
 
 async function mountView(path = '/quick-review') {
+  if (!document.getElementById('workspace-tabs-slot')) {
+    const slot = document.createElement('div')
+    slot.id = 'workspace-tabs-slot'
+    document.body.appendChild(slot)
+  }
   const pinia = createPinia()
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/quick-review', component: QuickReviewView },

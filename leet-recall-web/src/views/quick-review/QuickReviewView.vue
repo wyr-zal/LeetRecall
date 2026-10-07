@@ -37,6 +37,7 @@ const PANELS = [
   { key: 'dictation', label: '默写代码', icon: SquarePen },
 ] as const
 type Panel = (typeof PANELS)[number]['key']
+const MOBILE_LABELS: Record<Panel, string> = { notes: '笔记', recall: '回忆', dictation: '默写' }
 const mobileQuery = window.matchMedia?.('(max-width: 720px)')
 const narrow = ref(mobileQuery?.matches ?? false)
 function syncWidth(): void { narrow.value = mobileQuery?.matches ?? false }
@@ -184,13 +185,15 @@ useReviewShortcuts({
       <span>{{ notice || error }}</span>
       <button v-if="error" type="button" @click="currentProblemId ? store.loadProblem(currentProblemId, { keepPanelState: true }) : store.loadQueue()">重试</button>
     </div>
-    <nav class="mobile-tabs" aria-label="学习内容">
-      <button type="button" :aria-pressed="mobilePanel === 'description'" @click="selectPanel('description')"><FileText :size="16" />题目</button>
-      <button v-for="panel in PANELS" :key="panel.key" type="button" :aria-pressed="mobilePanel === panel.key" @click="selectPanel(panel.key)"><component :is="panel.icon" :size="16" />{{ panel.key === 'notes' ? '笔记' : panel.key === 'recall' ? '回忆' : '默写' }}</button>
-    </nav>
+    <Teleport to="#workspace-tabs-slot" defer>
+      <nav class="mobile-tabs" aria-label="学习内容">
+        <button type="button" :aria-pressed="mobilePanel === 'description'" aria-label="题目" title="题目" @click="selectPanel('description')"><FileText :size="18" /></button>
+        <button v-for="panel in PANELS" :key="panel.key" type="button" :aria-pressed="mobilePanel === panel.key" :aria-label="MOBILE_LABELS[panel.key]" :title="MOBILE_LABELS[panel.key]" @click="selectPanel(panel.key)"><component :is="panel.icon" :size="18" /></button>
+      </nav>
+    </Teleport>
     <div class="workspace-grid" :aria-busy="loading || detailLoading" :inert="blocked">
       <section class="statement-pane">
-        <header class="pane-heading"><span><FileText :size="16" />题目描述</span><button type="button" :disabled="!currentProblem || editing" aria-label="编辑题目" @click="enterEdit"><SquarePen :size="15" />编辑</button></header>
+        <header class="pane-heading"><span><FileText :size="16" /><span class="pane-heading-text">题目描述</span></span><button type="button" :disabled="!currentProblem || editing" aria-label="编辑题目" title="编辑题目" @click="enterEdit"><SquarePen :size="15" /><span class="pane-heading-text">编辑</span></button></header>
         <div ref="statementBody" class="statement-body">
           <template v-if="currentProblem">
             <ProblemHeader :number="currentProblem.leetcodeNumber" :title="currentProblem.title" :difficulty="currentProblem.difficulty" :tags="currentProblem.tags" :updated-at="currentProblem.updatedAt" :external-imported="currentProblem.externalImported" />
@@ -272,9 +275,12 @@ useReviewShortcuts({
 @media (max-width: 1100px) { .statement-body, .note-body, .recall-scroll { padding: 16px; } .study-tabs button { padding-inline: 9px; } }
 @media (max-width: 720px) {
   .workspace-grid { grid-template-columns: minmax(0, 1fr); }
-  .mobile-tabs { display: flex; min-height: 48px; flex: 0 0 auto; border-bottom: 1px solid var(--border-secondary); background: var(--bg-card); }
-  .mobile-tabs button { display: inline-flex; align-items: center; justify-content: center; flex: 1; min-width: 0; min-height: 48px; gap: 5px; padding: 4px; color: var(--text-muted); font-size: calc(12px * var(--ui-font-ratio)); border: 0; border-bottom: 2px solid transparent; background: transparent; }
-  .mobile-tabs button[aria-pressed="true"] { color: var(--primary); border-bottom-color: var(--primary); }
+  /* 页签由 Teleport 移入顶栏 #workspace-tabs-slot，与题号导航同行 */
+  .mobile-tabs { display: flex; height: 44px; flex: 1 1 auto; min-width: 0; align-items: center; }
+  .mobile-tabs button { display: inline-flex; align-items: center; justify-content: center; flex: 1 1 0; min-width: 0; height: 44px; padding: 0; color: var(--text-muted); border: 0; border-radius: 8px; background: transparent; }
+  .mobile-tabs button[aria-pressed="true"] { color: var(--primary); background: var(--primary-soft); }
+  .pane-heading { height: 34px; min-height: 34px; padding: 0 10px; }
+  .pane-heading .pane-heading-text { display: none; }
   .statement-pane { display: none; border-right: 0; }
   .mobile-description .statement-pane { display: flex; }
   .mobile-description .learning-pane { display: none; }
