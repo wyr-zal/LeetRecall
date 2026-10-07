@@ -1,56 +1,85 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
-import { createMemoryHistory, createRouter } from 'vue-router'
 import { dictationApi } from '@/api/dictation'
+import { codeAnnotationApi } from '@/api/codeAnnotation'
+import { useDictationStore } from '@/stores/dictation'
 import DictationView from '../DictationView.vue'
 
-function buildRouter() {
-  return createRouter({
-    history: createMemoryHistory(),
-    routes: [
-      { path: '/', redirect: '/quick-review' },
-      { path: '/quick-review', component: { template: '<div />' } },
-      { path: '/dictation', component: DictationView },
-      { path: '/problem-import', component: { template: '<div />' } },
-    ],
-  })
+function mountView(active = true) {
+  const pinia = createPinia()
+  const wrapper = mount(DictationView, { props: { active, problemId: 1, revision: 0 }, global: {
+    plugins: [pinia], stubs: { CodeBlankEditor: { template: '<div class="editor-stub" />' }, AnnotationPanel: true, DictationHistory: true, RecordDetailDialog: true },
+  } })
+  return { wrapper, store: useDictationStore(pinia) }
 }
 
-async function mountView() {
-  const router = buildRouter()
-  await router.push('/dictation')
-  await router.isReady()
-  const wrapper = mount(DictationView, { global: { plugins: [router, createPinia()] } })
-  await flushPromises()
-  return { wrapper, router }
-}
-
-describe('DictationView 会话栏入口', () => {
+describe('DictationView 工作台面板', () => {
+  const wrappers: Array<ReturnType<typeof mount>> = []
   beforeEach(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+    vi.spyOn(dictationApi, 'getProblemDetail').mockImplementation(async (problemId) => ({
+      problemId, leetcodeNumber: problemId, title: '两数之和', tags: [], language: 'JAVA', templateCode: 'return {{blank_1}};',
+      keywords: [], mistakes: [], difficulty: 'EASY', descriptionMarkdown: '题目', recallQuestions: [], coreIdea: '',
+    }))
+    vi.spyOn(dictationApi, 'getRecords').mockResolvedValue({ page: 1, pageSize: 2, total: 0, items: [] })
     vi.spyOn(dictationApi, 'getTodayQueue').mockResolvedValue({ total: 0, completed: 0, items: [] })
+    vi.spyOn(codeAnnotationApi, 'list').mockResolvedValue([])
+    vi.spyOn(dictationApi, 'submit').mockResolvedValue({ correctCount: 1, totalCount: 1, accuracy: 100, viewedAnswer: false, resultItems: [] })
+  })
+  afterEach(() => { wrappers.forEach(w => w.unmount()); wrappers.length = 0; vi.restoreAllMocks() })
+
+  it('不再创建会话导航栏，也不自主加载或选择队列', async () => {
+    const { wrapper } = mountView()
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.find('.dictation-session-bar').exists()).toBe(false)
+    expect(wrapper.find('.editor-stub').exists()).toBe(true)
+    expect(dictationApi.getTodayQueue).not.toHaveBeenCalled()
+    expect(dictationApi.getProblemDetail).toHaveBeenCalledWith(1)
   })
 
-  afterEach(() => vi.restoreAllMocks())
-
-  it('提供快速复习与导入题目入口，且带可访问名称', async () => {
-    const { wrapper } = await mountView()
-    const [quickReview, importEntry] = wrapper.findAll('.session-link')
-
-    expect(quickReview?.attributes('href')).toBe('/quick-review')
-    expect(quickReview?.attributes('aria-label')).toBe('快速复习')
-    expect(importEntry?.attributes('href')).toBe('/problem-import')
-    expect(importEntry?.attributes('aria-label')).toBe('导入题目')
+  it('同题隐藏再显示不重拉模板，不重置草稿与评分', async () => {
+    const { wrapper, store } = mountView()
+    wrappers.push(wrapper)
+    await flushPromises()
+    store.updateAnswers({ blank_1: 'root' })
+    await store.submit()
+    const editor = wrapper.get('.editor-stub').element
+    await wrapper.setProps({ active: false })
+    await wrapper.setProps({ active: true })
+    await flushPromises()
+    expect(dictationApi.getProblemDetail).toHaveBeenCalledTimes(1)
+    expect(store.currentAnswers.blank_1).toBe('root')
+    expect(store.submitResult?.accuracy).toBe(100)
+    expect(wrapper.get('.editor-stub').element).toBe(editor)
   })
 
-  it('点击入口跳转到对应页面', async () => {
-    const { wrapper, router } = await mountView()
-
-    await wrapper.findAll('.session-link')[0]?.trigger('click')
+  it('导入修订使旧模板失效，隐藏期间不加载，显示时重拉并撤销旧评分', async () => {
+    const { wrapper, store } = mountView()
+    wrappers.push(wrapper)
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/quick-review')
-
-    await wrapper.findAll('.session-link')[1]?.trigger('click')
+    await store.submit()
+    store.updateAnswers({ blank_1: 'draft' })
+    await wrapper.setProps({ active: false, revision: 1 })
+    expect(dictationApi.getProblemDetail).toHaveBeenCalledTimes(1)
+    await wrapper.setProps({ active: true })
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/problem-import')
+    expect(dictationApi.getProblemDetail).toHaveBeenCalledTimes(2)
+    expect(store.submitResult).toBeNull()
+    expect(store.currentAnswers.blank_1).toBe('draft')
+  })
+
+  it('隐藏面板不响应 Ctrl+Enter，显示后只提交一次', async () => {
+    const { wrapper } = mountView()
+    wrappers.push(wrapper)
+    await flushPromises()
+    await wrapper.setProps({ active: false })
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true }))
+    expect(dictationApi.submit).not.toHaveBeenCalled()
+    await wrapper.setProps({ active: true })
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true }))
+    await flushPromises()
+    expect(dictationApi.submit).toHaveBeenCalledTimes(1)
   })
 })

@@ -1,31 +1,19 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { ref } from 'vue'
+import { useDialogFocus } from '@/composables/useDialogFocus'
 import { X } from 'lucide-vue-next'
 import type { DictationRecordDetail } from '@/types/dictation'
 const props = defineProps<{ detail: DictationRecordDetail | null }>()
 const emit = defineEmits<{ close: [] }>()
-const closeButtonRef = ref<HTMLButtonElement | null>(null)
-
-function onKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape' && props.detail) emit('close')
-}
-
-onMounted(() => window.addEventListener('keydown', onKeydown))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
-
-// 打开时聚焦关闭按钮，键盘用户不必先 Tab 穿过整个页面。
-watch(() => props.detail, async (detail) => {
-  if (!detail) return
-  await nextTick()
-  closeButtonRef.value?.focus()
-})
+const dialogRef = ref<HTMLElement | null>(null)
+useDialogFocus(() => props.detail !== null, dialogRef, () => emit('close'))
 </script>
 
 <template>
   <Teleport to="body">
     <div v-if="detail" class="backdrop" @click.self="$emit('close')">
-      <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="record-title">
-        <header><div><h2 id="record-title">默写记录详情</h2><p>{{ detail.viewedAnswer ? '本次查看过答案' : '本次未查看答案' }}</p></div><button ref="closeButtonRef" type="button" aria-label="关闭" @click="$emit('close')"><X :size="18" /></button></header>
+      <section ref="dialogRef" class="dialog" role="dialog" aria-modal="true" aria-labelledby="record-title">
+        <header><div><h2 id="record-title">默写记录详情</h2><p>{{ detail.viewedAnswer ? '本次查看过答案' : '本次未查看答案' }}</p></div><button data-dialog-focus type="button" aria-label="关闭" @click="$emit('close')"><X :size="18" /></button></header>
         <p v-if="detail.legacySnapshot" class="legacy-note">这是历史快照以前创建的记录，当前题目已覆盖，因此不再使用当前模板重新判分。</p>
         <details v-else-if="detail.templateCode" class="template-snapshot"><summary>查看本次默写的模板快照</summary><pre>{{ detail.templateCode }}</pre></details>
         <div class="answers">

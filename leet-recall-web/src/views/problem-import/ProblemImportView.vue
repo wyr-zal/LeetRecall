@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useDialogFocus } from '@/composables/useDialogFocus'
 import { CheckCircle2, ChevronDown, Clipboard, Download, FileJson, FileText, ListFilter, RefreshCw, Search, X } from 'lucide-vue-next'
 import { problemImportApi } from '@/api/problemImport'
 import MarkdownContent from '@/components/common/MarkdownContent.vue'
@@ -8,7 +9,15 @@ import importSpecMarkdown from '@/content/external-import-spec.md?raw'
 import type { Difficulty } from '@/types/problem'
 import type { ExternalImportDraft, ExternalImportTaskPack, Hot100Manifest, Hot100Problem, ProblemCreated } from '@/types/import'
 
+const props = withDefaults(defineProps<{
+  active?: boolean
+  embedded?: boolean
+  initialNumber?: number
+  beforeImport?: () => Promise<boolean>
+}>(), { active: true, embedded: false, initialNumber: undefined, beforeImport: undefined })
+const emit = defineEmits<{ imported: [problemId: number]; busy: [value: boolean] }>()
 const importSpec = importSpecMarkdown
+const browserDialog = ref<HTMLElement | null>(null)
 
 const manifest = ref<Hot100Manifest | null>(null)
 const task = ref<ExternalImportTaskPack | null>(null)
@@ -35,6 +44,22 @@ const readingJsonFile = ref(false)
 const confirming = ref(false)
 const copied = ref(false)
 const overwriteDialogOpen = ref(false)
+useDialogFocus(() => props.active && browserOpen.value, browserDialog, closeProblemBrowser)
+watch(() => props.active, (active) => {
+  if (active) document.addEventListener('click', closePickerWhenClickedOutside)
+  else {
+    document.removeEventListener('click', closePickerWhenClickedOutside)
+    pickerOpen.value = false
+    browserOpen.value = false
+    overwriteDialogOpen.value = false
+  }
+}, { immediate: true })
+watch([busy, confirming, readingJsonFile], () => emit('busy', busy.value || confirming.value || readingJsonFile.value))
+watch(() => [manifest.value, props.active, props.initialNumber], () => {
+  if (!props.active || selectedNumber.value !== null || json.value.trim()) return
+  const problem = manifest.value?.problems.find((item) => item.leetcodeNumber === props.initialNumber)
+  if (problem) void selectProblem(problem)
+})
 
 const MAX_JSON_FILE_BYTES = 200_000
 const RECENT_PROBLEMS_KEY = 'leetrecall.problem-import.recent'
@@ -109,8 +134,6 @@ function clearValidatedResult(): void {
 }
 
 onMounted(async () => {
-  document.addEventListener('click', closePickerWhenClickedOutside)
-  window.addEventListener('keydown', closeBrowserOnEscape)
   loadRecentProblems()
   try { manifest.value = await problemImportApi.getHot100Manifest() }
   catch (cause) { error.value = cause instanceof Error ? cause.message : '无法加载 Hot100 清单' }
@@ -118,7 +141,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', closePickerWhenClickedOutside)
-  window.removeEventListener('keydown', closeBrowserOnEscape)
+  emit('busy', false)
 })
 
 function difficultyLabel(difficulty: Difficulty): string {
@@ -171,10 +194,6 @@ async function openProblemBrowser(): Promise<void> {
 
 function closeProblemBrowser(): void {
   browserOpen.value = false
-}
-
-function closeBrowserOnEscape(event: KeyboardEvent): void {
-  if (event.key === 'Escape' && browserOpen.value) closeProblemBrowser()
 }
 
 function onSearchInput(): void {
@@ -290,14 +309,20 @@ async function confirmImport(): Promise<void> {
 }
 
 async function runImport(): Promise<void> {
-  if (!draft.value || !ready.value) return
+  if (!draft.value || !ready.value || confirming.value) return
   const overwrite = draft.value.impact.requiresConfirmation
+  const draftId = draft.value.id
   overwriteDialogOpen.value = false
   confirming.value = true; error.value = ''
   try {
-    const result = await problemImportApi.confirmExternalDraft(draft.value.id, overwrite)
+    if (props.beforeImport && !await props.beforeImport()) {
+      error.value = '笔记保存失败，请先保存笔记再导入。'
+      return
+    }
+    const result = await problemImportApi.confirmExternalDraft(draftId, overwrite)
     draft.value = result
     created.value = result.publishedProblemId ? { problemId: result.publishedProblemId, leetcodeNumber: result.leetcodeNumber, title: task.value?.title ?? '' } : null
+    if (result.publishedProblemId) emit('imported', result.publishedProblemId)
   } catch (cause) { error.value = cause instanceof Error ? cause.message : '确认导入失败' }
   finally { confirming.value = false }
 }
@@ -329,8 +354,8 @@ function downloadJsonExample(): void {
 </script>
 
 <template>
-  <main class="import-page">
-    <header class="page-header">
+  <main class="import-page" :class="{ embedded }" :inert="!active || confirming">
+    <header v-if="!embedded" class="page-header">
       <div><p>EXTERNAL JSON IMPORT</p><h1>外部 AI 学习资料导入</h1><span>系统不调用 AI。你负责生成，LeetRecall 只检查能否安全导入和正常使用。</span></div>
     </header>
 
@@ -375,10 +400,13 @@ function downloadJsonExample(): void {
       </div>
       <p v-if="busy" class="loading-task"><RefreshCw :size="15" class="spin" />正在加载任务包…</p>
       <div v-if="task" class="task-meta"><a :href="task.problemUrl" target="_blank" rel="noreferrer">打开力扣中文题面</a><span>题号、标题、难度和官方 Java 签名已锁定；题面可改写，但 Markdown 代码围栏必须闭合。</span></div>
-      <div v-if="task" class="notes-grid">
-        <label class="field"><span>我的题解 / 参考摘要（可选）</span><textarea v-model="solutionNotes" rows="5" placeholder="把你找到的题解、自己的推导或关键代码思路贴在这里，再复制任务文档给外部 AI。" /></label>
-        <label class="field"><span>我的难点（可选）</span><textarea v-model="difficultyNotes" rows="5" placeholder="例如：不理解更新顺序、边界条件、复杂度优化或设计题 API。" /></label>
-      </div>
+      <details v-if="task" class="optional-notes">
+        <summary>补充题解或难点（可选）</summary>
+        <div class="notes-grid">
+          <label class="field"><span>我的题解 / 参考摘要（可选）</span><textarea v-model="solutionNotes" rows="5" placeholder="把你找到的题解、自己的推导或关键代码思路贴在这里，再复制任务文档给外部 AI。" /></label>
+          <label class="field"><span>我的难点（可选）</span><textarea v-model="difficultyNotes" rows="5" placeholder="例如：不理解更新顺序、边界条件、复杂度优化或设计题 API。" /></label>
+        </div>
+      </details>
       <div v-if="task" class="doc-actions"><button class="secondary" @click="copyDocument"><Clipboard :size="16" />{{ copied ? '已复制' : '复制完整任务文档' }}</button><button class="secondary" @click="downloadDocument"><Download :size="16" />下载完整 Markdown</button><button class="secondary" @click="downloadJsonExample"><FileJson :size="16" />下载 JSON 示例</button></div>
       <details v-if="task" class="preview"><summary>预览将交给外部 AI 的任务文档</summary><pre>{{ documentText }}</pre></details>
     </section>
@@ -421,7 +449,7 @@ function downloadJsonExample(): void {
     </details>
 
     <ConfirmDialog
-      :open="overwriteDialogOpen"
+      :open="active && overwriteDialogOpen"
       title="确认更新学习资料"
       :description="`题号 ${draft?.leetcodeNumber ?? ''} 已对应官方题目。本次只替换学习资料，保留题目 ID、官方标题、难度、题面、标签、学习进度、已有笔记、复习记录和历史默写记录；JSON 笔记只在现有笔记为空时填入。确定继续吗？`"
       confirm-label="确认更新学习资料"
@@ -430,8 +458,8 @@ function downloadJsonExample(): void {
     />
 
     <Teleport to="body">
-      <div v-if="browserOpen" class="problem-browser-backdrop" role="presentation" @click.self="closeProblemBrowser">
-        <section class="problem-browser" role="dialog" aria-modal="true" aria-labelledby="problem-browser-title">
+      <div v-if="active && browserOpen" class="problem-browser-backdrop" role="presentation" @click.self="closeProblemBrowser">
+        <section ref="browserDialog" class="problem-browser" role="dialog" aria-modal="true" aria-labelledby="problem-browser-title">
           <header class="problem-browser-header">
             <div><h2 id="problem-browser-title">浏览 Hot100 题目</h2><p>按分类和难度缩小范围，选择后自动加载任务包。</p></div>
             <button class="icon-button" type="button" aria-label="关闭题目浏览" @click="closeProblemBrowser"><X :size="19" /></button>
@@ -470,6 +498,11 @@ function downloadJsonExample(): void {
 
 <style scoped>
 .import-page { padding: 34px 22px 64px; }
+.import-page.embedded { padding: 16px 18px 24px; }
+.embedded .panel { padding: 18px; }
+.embedded .doc-actions { flex-wrap: wrap; }
+.optional-notes { margin-top: 14px; color: var(--text-secondary); font-size: calc(12px * var(--ui-font-ratio)); }
+.optional-notes summary { cursor: pointer; }
 .page-header { padding: 0 2px 22px; margin-bottom: 20px; border-bottom: 1px solid var(--border-secondary); }.page-header p { margin: 0 0 8px; color: var(--primary); font-size: calc(11px * var(--ui-font-ratio)); font-weight: 700; letter-spacing: .1em; }.page-header h1 { margin: 0 0 8px; font-size: calc(26px * var(--ui-font-ratio)); }.page-header span, .section-heading p { color: var(--text-muted); font-size: calc(13px * var(--ui-font-ratio)); }
 .panel { padding: 22px; margin-bottom: 18px; }.section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }.section-heading h2 { margin: 0 0 5px; font-size: calc(17px * var(--ui-font-ratio)); }.section-heading p { margin: 0; line-height: 1.5; }.primary, .secondary { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 0 15px; border-radius: 8px; cursor: pointer; }.primary { color: var(--on-primary); border: 1px solid var(--primary); background: var(--primary); }.secondary { color: var(--text-primary); border: 1px solid var(--border-primary); background: var(--bg-input); }.primary:disabled, .secondary:disabled { opacity: .5; cursor: not-allowed; }
 .field { display: grid; gap: 7px; color: var(--text-secondary); font-size: calc(12px * var(--ui-font-ratio)); }.field textarea { width: 100%; color: var(--text-primary); border: 1px solid var(--border-primary); border-radius: 8px; outline: none; background: var(--bg-input); }.field textarea { padding: 11px; resize: vertical; line-height: 1.6; }.problem-picker { position: relative; z-index: 2; }.picker-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }.search-control { display: flex; align-items: center; min-height: 42px; padding: 0 11px; color: var(--text-muted); border: 1px solid var(--border-primary); border-radius: 8px; background: var(--bg-input); transition: border-color 150ms ease, box-shadow 150ms ease; }.search-control:focus-within, .search-control.open { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(255, 161, 22, .1); }.search-control input { width: 100%; min-width: 0; padding: 0 9px; color: var(--text-primary); border: 0; outline: 0; background: transparent; }.search-control input:disabled { cursor: wait; }.clear-search { display: grid; width: 28px; height: 28px; flex: 0 0 auto; color: var(--text-muted); border: 0; border-radius: 5px; place-items: center; background: transparent; }.clear-search:hover { color: var(--text-primary); background: var(--bg-card-hover); }.picker-chevron { flex: 0 0 auto; transition: transform 150ms ease; }.picker-chevron.rotated { transform: rotate(180deg); }.browse-button { white-space: nowrap; }.search-results { position: absolute; z-index: 10; top: calc(100% + 6px); right: 118px; left: 0; max-height: 280px; overflow: auto; padding: 5px; border: 1px solid var(--border-primary); border-radius: 8px; background: var(--surface-overlay); box-shadow: var(--shadow-high); }.result-section-label { padding: 7px 10px 5px; margin: 0; color: var(--text-muted); font-size: calc(11px * var(--ui-font-ratio)); font-weight: 700; }.search-result { display: grid; width: 100%; min-height: 52px; padding: 7px 10px; color: var(--text-secondary); border: 0; border-radius: 6px; grid-template-columns: auto minmax(0, 1fr); gap: 9px; align-items: center; text-align: left; background: transparent; }.search-result:hover, .search-result:focus-visible, .search-result.selected { color: var(--text-primary); background: var(--bg-card-hover); }.search-result.selected { box-shadow: inset 2px 0 0 var(--primary); }.result-order { display: grid; min-width: 28px; height: 28px; padding: 0 5px; color: var(--text-muted); border: 1px solid var(--border-secondary); border-radius: 6px; place-items: center; font-size: calc(11px * var(--ui-font-ratio)); font-variant-numeric: tabular-nums; }.result-title { display: grid; min-width: 0; gap: 2px; }.result-title strong { overflow: hidden; color: var(--text-primary); font-size: calc(12px * var(--ui-font-ratio)); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }.result-title small { color: var(--text-muted); font-size: calc(11px * var(--ui-font-ratio)); }.no-results { padding: 14px 10px; margin: 0; color: var(--text-muted); font-size: calc(12px * var(--ui-font-ratio)); line-height: 1.6; }.task-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 12px; color: var(--text-muted); font-size: calc(12px * var(--ui-font-ratio)); }.task-meta a { color: var(--primary); text-decoration: none; }.loading-task { display: flex; align-items: center; gap: 7px; margin: 12px 0 0; color: var(--text-muted); font-size: calc(12px * var(--ui-font-ratio)); }.spin { animation: spin 900ms linear infinite; }@keyframes spin { to { transform: rotate(360deg); } }.notes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 16px; }.doc-actions { display: flex; gap: 10px; margin-top: 14px; }.preview { margin-top: 16px; border-top: 1px solid var(--border-secondary); padding-top: 12px; }.preview summary { cursor: pointer; color: var(--text-secondary); font-size: calc(12px * var(--ui-font-ratio)); }.preview pre { max-height: 500px; overflow: auto; padding: 14px; margin-top: 10px; color: var(--text-secondary); background: var(--bg-input); border-radius: 8px; white-space: pre-wrap; font-family: var(--font-mono, monospace); font-size: var(--code-font-size); line-height: 1.65; }.json-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 12px; }.json-actions > span { color: var(--text-muted); font-size: calc(12px * var(--ui-font-ratio)); }.json-file-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }.json-editor-wrap { display: grid; grid-template-columns: 44px minmax(0, 1fr); overflow: hidden; border: 1px solid var(--border-primary); border-radius: 8px; background: var(--bg-input); }.json-editor-wrap:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(255, 161, 22, .1); }.json-editor-wrap .line-numbers { overflow: hidden; padding: 11px 8px 11px 0; color: var(--text-muted); font-family: var(--font-mono, monospace); font-size: var(--code-font-size); line-height: 1.6; text-align: right; user-select: none; border-right: 1px solid var(--border-secondary); background: var(--code-surface-raised); }.json-editor-wrap textarea { min-height: 360px; border: 0; border-radius: 0; background: transparent; }.json-editor-wrap textarea:focus { border: 0 !important; box-shadow: none !important; }.json-editor { font-family: var(--font-mono, monospace); font-size: var(--code-font-size); line-height: 1.6; }.inline-error { margin: 8px 0 0; color: var(--danger); font-size: calc(12px * var(--ui-font-ratio)); }.draft-result { padding-top: 16px; margin-top: 16px; border-top: 1px solid var(--border-secondary); }.status-line { display: flex; gap: 14px; align-items: center; color: var(--text-secondary); font-size: calc(13px * var(--ui-font-ratio)); }.passed { color: var(--success); }.failed { color: var(--danger); }.errors { padding: 11px 12px 11px 28px; margin: 12px 0; color: var(--danger-strong); border: 1px solid rgba(239,68,68,.34); border-radius: 8px; background: var(--danger-soft); font-size: calc(12px * var(--ui-font-ratio)); line-height: 1.7; }.impact { display: grid; gap: 4px; padding: 12px; margin-top: 12px; color: var(--text-muted); border: 1px solid var(--border-primary); border-radius: 8px; font-size: calc(12px * var(--ui-font-ratio)); }.impact strong { color: var(--text-primary); }.confirm { margin-top: 14px; }.feedback { display: flex; gap: 8px; align-items: center; padding: 12px 14px; margin-top: 14px; border-radius: 8px; font-size: calc(13px * var(--ui-font-ratio)); }.feedback.error { color: var(--danger-strong); background: var(--danger-soft); }.feedback.success { color: var(--success-strong); background: rgba(34,197,94,.08); }.format-help { padding: 0; color: var(--primary); }.format-help summary { display: flex; align-items: center; gap: 12px; padding: 16px 18px; cursor: pointer; list-style: none; }.format-help summary::-webkit-details-marker { display: none; }.format-help summary span { display: grid; gap: 3px; flex: 1; }.format-help summary strong { color: var(--text-primary); font-size: calc(15px * var(--ui-font-ratio)); }.format-help summary small { color: var(--text-muted); font-size: calc(12px * var(--ui-font-ratio)); }.format-help summary > svg:last-child { transition: transform 150ms ease; }.format-help[open] summary > svg:last-child { transform: rotate(180deg); }.rules-content { padding: 16px 18px 18px; color: var(--text-muted); border-top: 1px solid var(--border-secondary); font-size: calc(12px * var(--ui-font-ratio)); line-height: 1.65; }

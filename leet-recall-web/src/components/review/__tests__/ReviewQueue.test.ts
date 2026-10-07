@@ -93,49 +93,45 @@ describe('ReviewQueue', () => {
     expect(at(stamps, 1).classes()).toContain('never')
   })
 
-  // 打开页面时队列不再停在第一题：数据到达后把当前题滚到列表中部。
-  it('scrolls the current problem to the middle when the queue data arrives', async () => {
-    mount(ReviewQueue, {
-      props: {
-        items: [queueItem(1, null), queueItem(2, null), queueItem(3, null)],
-        currentProblemId: 2,
-      },
+  it('只滚动目录容器，不使用会带动页面的 scrollIntoView', async () => {
+    const wrapper = mount(ReviewQueue, {
+      props: { items: [queueItem(1, null), queueItem(2, null)], currentProblemId: 2, active: false },
     })
-
+    const list = wrapper.get('.queue-list').element as HTMLElement
+    const current = wrapper.get('[aria-current="true"]').element
+    Object.defineProperty(list, 'clientHeight', { value: 200 })
+    vi.spyOn(list, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 100, 300, 200))
+    vi.spyOn(current, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 500, 300, 40))
+    await wrapper.setProps({ active: true })
     await nextTick()
-
-    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: 'center' })
+    expect(list.scrollTop).toBe(320)
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled()
   })
 
-  it('relocates the current problem after the queue is refreshed', async () => {
+  it('目标题已在目录视口内时切题不滚动', async () => {
     const wrapper = mount(ReviewQueue, {
       props: { items: [queueItem(1, null), queueItem(2, null)], currentProblemId: 1 },
     })
     await nextTick()
-    vi.mocked(Element.prototype.scrollIntoView).mockClear()
-
-    await wrapper.setProps({
-      items: [queueItem(1, null), queueItem(2, null), queueItem(3, null)],
-      currentProblemId: 1,
-    })
-    await nextTick()
-    await nextTick()
-
-    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: 'center' })
-  })
-
-  // 点击切题：目标题已在视口内，最小滚动，避免列表跳动。
-  it('uses the minimal scroll when the current problem changes', async () => {
-    const wrapper = mount(ReviewQueue, {
-      props: { items: [queueItem(1, null), queueItem(2, null)], currentProblemId: 1 },
-    })
-    await nextTick()
-    vi.mocked(Element.prototype.scrollIntoView).mockClear()
-
+    const list = wrapper.get('.queue-list').element as HTMLElement
+    const second = wrapper.findAll('.queue-list button')[1]!.element
+    vi.spyOn(list, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 100, 300, 200))
+    vi.spyOn(second, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 150, 300, 40))
+    const previous = list.scrollTop
     await wrapper.setProps({ currentProblemId: 2 })
     await nextTick()
-    await nextTick()
+    expect(list.scrollTop).toBe(previous)
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled()
+  })
 
-    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+  it('目录关闭期间刷新数据不改变滚动位置', async () => {
+    const wrapper = mount(ReviewQueue, {
+      props: { items: [queueItem(1, null)], currentProblemId: 1, active: false },
+    })
+    const list = wrapper.get('.queue-list').element as HTMLElement
+    list.scrollTop = 80
+    await wrapper.setProps({ items: [queueItem(1, null), queueItem(2, null)] })
+    await nextTick()
+    expect(list.scrollTop).toBe(80)
   })
 })

@@ -39,6 +39,13 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
   const editLoading = ref(false)
   const editSaving = ref(false)
   const editError = ref('')
+  const contentRevision = ref(0)
+  let detailRequestSequence = 0
+  let beforeProblemChange: (() => Promise<boolean>) | undefined
+
+  function setBeforeProblemChange(guard?: () => Promise<boolean>): void {
+    beforeProblemChange = guard
+  }
 
   const completedCount = computed(() => todayQueue.value.filter((item) => item.completed).length)
   const currentIndex = computed(() => todayQueue.value.findIndex(
@@ -77,43 +84,48 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
     }
   }
 
-  async function refreshQueue(): Promise<void> {
+  async function refreshQueue(options?: { reloadDetail?: boolean }): Promise<void> {
     if (loading.value) return
     try {
       const queue = await reviewApi.getTodayQueue()
       todayQueue.value = queue.items
-      const previousProblemId = currentProblemId.value
+      if (options?.reloadDetail === false) return
       const activeProblemId = readActiveProblemId()
-      if (activeProblemId !== null && queue.items.some((item) => item.problemId === activeProblemId)) {
-        currentProblemId.value = activeProblemId
-      }
-      const currentExists = queue.items.some((item) => item.problemId === currentProblemId.value)
-      if (!currentExists) {
-        currentProblemId.value = queue.items.find((item) => !item.completed)?.problemId
-          ?? queue.items[0]?.problemId
-          ?? null
-      }
-      persistCurrent()
-      if (currentProblemId.value === null) {
+      const target = queue.items.find((item) => item.problemId === activeProblemId)?.problemId
+        ?? queue.items.find((item) => item.problemId === currentProblemId.value)?.problemId
+        ?? queue.items[0]?.problemId
+      if (target !== undefined) {
+        await loadProblem(target, { keepPanelState: target === currentProblemId.value })
+      } else {
         currentProblem.value = null
-        return
+        currentProblemId.value = null
       }
-      // 同题也重拉：导入/编辑会覆盖当前题内容，切回页面必须直接拿到新数据，不再要求 F5。
-      // 题号没变时保留面板展开状态与计时；换题走完整重置。
-      await loadProblem(currentProblemId.value, {
-        keepPanelState: currentProblemId.value === previousProblemId,
-      })
     } catch (cause) {
-      if (!currentProblem.value) error.value = cause instanceof Error ? cause.message : '加载失败，请重试'
+      error.value = cause instanceof Error ? cause.message : '加载失败，请重试'
     }
   }
 
-  /** keepPanelState：同题重拉（切页回来）时保留提示/答案展开状态与计时，只换数据。 */
-  async function loadProblem(problemId: number, options?: { keepPanelState?: boolean }): Promise<void> {
+  /** 同题刷新保留内容容器；只有数据成功返回后才切换当前题。 */
+  async function loadProblem(problemId: number, options?: { keepPanelState?: boolean }): Promise<boolean> {
+    const sequence = ++detailRequestSequence
+    if (problemId !== currentProblemId.value) {
+      if (editing.value) {
+        error.value = '请先保存或取消题目编辑，再切换题目。'
+        detailLoading.value = false
+        return false
+      }
+      if (beforeProblemChange && !await beforeProblemChange()) {
+        if (sequence === detailRequestSequence) detailLoading.value = false
+        return false
+      }
+      if (sequence !== detailRequestSequence) return false
+    }
     detailLoading.value = true
     error.value = ''
     try {
-      currentProblem.value = await reviewApi.getProblemDetail(problemId)
+      const detail = await reviewApi.getProblemDetail(problemId)
+      if (sequence !== detailRequestSequence) return false
+      currentProblem.value = detail
       currentProblemId.value = problemId
       if (!options?.keepPanelState) {
         hintVisible.value = false
@@ -121,10 +133,12 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
         startTime.value = Date.now()
       }
       persistCurrent()
+      return true
     } catch (cause) {
-      error.value = cause instanceof Error ? cause.message : '加载失败，请重试'
+      if (sequence === detailRequestSequence) error.value = cause instanceof Error ? cause.message : '加载失败，请重试'
+      return false
     } finally {
-      detailLoading.value = false
+      if (sequence === detailRequestSequence) detailLoading.value = false
     }
   }
 
@@ -165,6 +179,7 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
       editing.value = false
       editContent.value = null
       await loadProblem(problemId)
+      contentRevision.value += 1
       const queueItem = todayQueue.value.find((item) => item.problemId === problemId)
       if (queueItem && currentProblem.value) {
         queueItem.title = currentProblem.value.title
@@ -212,7 +227,9 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
 
   async function submit(result: Exclude<MasteryLevel, 'NEW'>): Promise<ReviewSubmitResult | null> {
     const problem = currentProblem.value
-    if (!problem || submitting.value || editing.value) return null
+    if (!problem || submitting.value || editing.value || detailLoading.value) return null
+    if (beforeProblemChange && !await beforeProblemChange()) return null
+    if (submitting.value || detailLoading.value || currentProblem.value !== problem) return null
     submitting.value = true
     try {
       const response = await reviewApi.submit(problem.problemId, {
@@ -278,6 +295,8 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
     editLoading,
     editSaving,
     editError,
+    contentRevision,
+    setBeforeProblemChange,
     completedCount,
     currentIndex,
     currentDraft,

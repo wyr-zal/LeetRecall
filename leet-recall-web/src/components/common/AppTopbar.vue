@@ -1,15 +1,43 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Flame, Moon, Search, Settings, Sun } from 'lucide-vue-next'
+import { Braces, ChevronLeft, ChevronRight, FileInput, Flame, List, Moon, Search, Sun } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { reviewApi } from '@/api/review'
 import { useQuickReviewStore } from '@/stores/quickReview'
 import { useTheme } from '@/composables/useTheme'
+import { useDictationStore } from '@/stores/dictation'
+import { useSettingsMenu } from '@/composables/useSettingsMenu'
+import SettingsMenu from '@/components/common/SettingsMenu.vue'
 import type { ProblemSearchItem } from '@/types/problem'
 
 const router = useRouter()
 const route = useRoute()
 const reviewStore = useQuickReviewStore()
+const dictationStore = useDictationStore()
+const { settingsMenuOpen, setSettingsMenuOpen } = useSettingsMenu()
+const isWorkspace = computed(() => route.path === '/quick-review')
+const navigationBusy = computed(() => reviewStore.loading || reviewStore.detailLoading || reviewStore.submitting || reviewStore.editing || dictationStore.submitting)
+
+function openTool(tool: 'picker' | 'import'): void {
+  setSettingsMenuOpen(false)
+  const query = isWorkspace.value ? { ...route.query } : {}
+  delete query.picker
+  delete query.import
+  void router.push({ path: '/quick-review', query: { ...query, [tool]: '1' } })
+}
+
+function toggleSettings(): void {
+  setSettingsMenuOpen(!settingsMenuOpen.value)
+}
+
+/** 旧 /settings 地址只用来打开一次下拉，随即把参数从地址栏清掉。 */
+function applySettingsQuery(): void {
+  if (route.query.settings !== '1') return
+  setSettingsMenuOpen(true)
+  const query = { ...route.query }
+  delete query.settings
+  void router.replace({ query })
+}
 const { themeMode, toggleTheme } = useTheme()
 const keyword = ref('')
 const results = ref<ProblemSearchItem[]>([])
@@ -20,13 +48,6 @@ const searchWrap = ref<HTMLElement | null>(null)
 const streak = ref(0)
 let searchTimer: ReturnType<typeof setTimeout> | undefined
 
-const routeTitle = computed(() => ({
-  '/quick-review': '快速复习',
-  '/dictation': '默写训练',
-  '/problem-import': '题目导入',
-  '/settings': '设置',
-}[route.path] ?? '学习工作台'))
-
 onMounted(async () => {
   document.addEventListener('click', closeSearchWhenClickedOutside)
   try {
@@ -34,6 +55,12 @@ onMounted(async () => {
   } catch {
     streak.value = 0
   }
+  await router.isReady()
+  applySettingsQuery()
+})
+
+watch(() => route.query.settings, (value) => {
+  if (value === '1') applySettingsQuery()
 })
 
 onBeforeUnmount(() => document.removeEventListener('click', closeSearchWhenClickedOutside))
@@ -83,20 +110,27 @@ function closeSearchWhenClickedOutside(event: MouseEvent): void {
 }
 
 async function selectProblem(problem: ProblemSearchItem): Promise<void> {
+  if (navigationBusy.value) return
+  if (!isWorkspace.value) await router.push('/quick-review')
+  if (!await reviewStore.loadProblem(problem.problemId)) return
   keyword.value = ''
   searchOpen.value = false
-  await router.push('/quick-review')
-  await reviewStore.openProblem(problem.problemId)
 }
 </script>
 
 <template>
   <header class="topbar">
     <div class="topbar-start">
-      <div class="route-context">
-        <span>LEETRECALL</span>
-        <strong>{{ routeTitle }}</strong>
-      </div>
+      <RouterLink class="topbar-brand" to="/quick-review" aria-label="LeetRecall 学习工作台">
+        <Braces :size="21" aria-hidden="true" />
+        <strong>LeetRecall</strong>
+      </RouterLink>
+      <nav v-if="isWorkspace" class="workspace-controls" aria-label="题目导航">
+        <button type="button" aria-label="选择题目" title="选择题目" :disabled="navigationBusy" @click="openTool('picker')"><List :size="18" /><span>选题</span></button>
+        <span class="problem-counter">{{ Math.max(0, reviewStore.currentIndex + 1) }} / {{ reviewStore.todayQueue.length }}</span>
+        <button type="button" aria-label="上一题" :disabled="navigationBusy || !reviewStore.todayQueue.length" @click="reviewStore.move(-1)"><ChevronLeft :size="18" /></button>
+        <button type="button" aria-label="下一题" :disabled="navigationBusy || !reviewStore.todayQueue.length" @click="reviewStore.move(1)"><ChevronRight :size="18" /></button>
+      </nav>
       <div ref="searchWrap" class="search-wrap">
         <Search class="search-icon" :size="18" aria-hidden="true" />
         <label class="screen-reader-only" for="global-search">搜索题目</label>
@@ -134,6 +168,8 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
     </div>
 
     <div class="topbar-actions">
+      <button class="tool-button" type="button" aria-label="导入题目" title="导入题目" :disabled="navigationBusy" @click="openTool('import')"><FileInput :size="18" /><span>导入</span></button>
+      <SettingsMenu :open="settingsMenuOpen" @toggle="toggleSettings" @close="setSettingsMenuOpen(false)" />
       <div class="streak" aria-label="连续复习天数">
         <Flame :size="19" :stroke-width="2" />
         <span>连续 <strong>{{ streak }}</strong> 天</span>
@@ -150,9 +186,6 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
         <Moon v-else :size="17" aria-hidden="true" />
         <span>{{ themeMode === 'dark' ? '浅色' : '深色' }}</span>
       </button>
-      <RouterLink class="settings-link" to="/settings" aria-label="设置" title="设置">
-        <Settings :size="20" aria-hidden="true" />
-      </RouterLink>
     </div>
   </header>
 </template>
@@ -174,32 +207,54 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
 
 .topbar-start {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   min-width: 0;
-  gap: clamp(20px, 3vw, 40px);
+  gap: clamp(12px, 1.6vw, 22px);
 }
 
-.route-context {
-  display: grid;
+.topbar-brand {
+  display: inline-flex;
   flex: 0 0 auto;
-  gap: 2px;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  text-decoration: none;
 }
 
-.route-context span {
-  color: var(--text-muted);
-  font-size: calc(9px * var(--ui-font-ratio));
-  font-weight: 700;
-  letter-spacing: 0.08em;
+.topbar-brand svg {
+  color: var(--primary);
 }
 
-.route-context strong {
-  font-size: calc(13px * var(--ui-font-ratio));
-  font-weight: 650;
+.topbar-brand strong {
+  font-size: calc(15px * var(--ui-font-ratio));
+  font-weight: 680;
+  letter-spacing: 0.01em;
 }
+
+.topbar-brand:hover svg {
+  color: var(--primary-hover);
+}
+
+.topbar-brand:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.workspace-controls { display: flex; flex: 0 0 auto; align-items: center; gap: 5px; }
+.workspace-controls button, .tool-button { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; min-width: 34px; height: 34px; padding: 0 8px; gap: 6px; color: var(--text-secondary); border: 1px solid var(--border-primary); border-radius: 7px; background: var(--bg-card); text-decoration: none; white-space: nowrap; }
+.workspace-controls button:hover, .tool-button:hover { color: var(--text-primary); background: var(--bg-card-hover); }
+.problem-counter { min-width: 66px; text-align: center; color: var(--text-muted); font-size: calc(12px * var(--ui-font-ratio)); font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 1100px) { .streak span, .tool-button span, .topbar-brand strong, .theme-toggle span { display: none; } }
+
+@media (max-width: 480px) { .problem-counter { display: none; } }
 
 .search-wrap {
   position: relative;
+  flex: 0 1 auto;
   width: min(320px, 34vw);
+  min-width: 150px;
 }
 
 .search-wrap input {
@@ -327,39 +382,19 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
   font-weight: 650;
 }
 
-.settings-link {
-  display: grid;
-  flex: 0 0 34px;
-  width: 34px;
-  height: 34px;
-  color: var(--text-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: 50%;
-  place-items: center;
-  background: var(--bg-card-hover);
-  text-decoration: none;
-}
-
-.settings-link:hover,
-.settings-link.router-link-active {
-  color: var(--text-primary);
-  border-color: var(--primary);
-}
-
-.settings-link:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
-}
-
 @media (max-width: 720px) {
   .topbar {
-    padding-inline: 12px;
+    flex-wrap: wrap;
+    padding: env(safe-area-inset-top) 10px 6px;
+    align-content: center;
+    gap: 6px;
   }
 
-  .topbar-start {
-    flex: 1 1 auto;
-    gap: 8px;
-  }
+  .topbar-start { flex: 1 1 100%; gap: 8px; }
+  .workspace-controls button, .tool-button { min-width: 44px; height: 44px; }
+  .workspace-controls button span { display: none; }
+  .problem-counter { min-width: 60px; }
+  .topbar-actions { width: 100%; justify-content: flex-end; }
 
   .search-wrap {
     width: auto;
@@ -372,7 +407,7 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
     height: 40px;
   }
 
-  .route-context { display: none; }
+  .topbar-brand { display: none; }
 
   .streak span {
     display: none;

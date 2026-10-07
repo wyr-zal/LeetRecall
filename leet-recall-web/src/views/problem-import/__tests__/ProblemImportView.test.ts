@@ -91,6 +91,43 @@ describe('ProblemImportView', () => {
 
   afterEach(() => vi.restoreAllMocks())
 
+  it('抽屉首次选中当前题，关闭再打开不清空 JSON 或改为其他题', async () => {
+    const wrapper = mount(ProblemImportView, { props: { active: true, initialNumber: 1, embedded: true }, global: { stubs: { MarkdownContent: true, ConfirmDialog: true } } })
+    await flushPromises()
+    expect(problemImportApi.getExternalImportTask).toHaveBeenCalledWith(1)
+    await wrapper.get('textarea.json-editor').setValue('{"draft":true}')
+    await wrapper.setProps({ active: false, initialNumber: 283 })
+    await wrapper.setProps({ active: true })
+    await flushPromises()
+    expect((wrapper.get('textarea.json-editor').element as HTMLTextAreaElement).value).toBe('{"draft":true}')
+    expect((wrapper.get('#hot100-search').element as HTMLInputElement).value).toContain('两数之和')
+    expect(problemImportApi.getExternalImportTask).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('确认导入前等待笔记保存，失败不调用确认接口，成功通知对应题目', async () => {
+    const readyDraft = { ...invalidDraft, status: 'READY' as const, validationErrors: [], compilePassed: true,
+      impact: { overwriteExisting: true, preserved: [], replaced: [], requiresConfirmation: false } }
+    vi.spyOn(problemImportApi, 'createExternalDraft').mockResolvedValue(readyDraft)
+    const confirm = vi.spyOn(problemImportApi, 'confirmExternalDraft').mockResolvedValue({ ...readyDraft, status: 'IMPORTED', publishedProblemId: 1 })
+    const guard = vi.fn().mockResolvedValue(false)
+    const wrapper = mount(ProblemImportView, { props: { active: true, initialNumber: 1, beforeImport: guard }, global: { stubs: { MarkdownContent: true, ConfirmDialog: true } } })
+    await flushPromises()
+    await wrapper.get('textarea.json-editor').setValue('{"leetcodeNumber":1}')
+    await wrapper.get('.section-heading .primary').trigger('click')
+    await flushPromises()
+    await wrapper.get('.confirm').trigger('click')
+    await flushPromises()
+    expect(confirm).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('笔记保存失败')
+    guard.mockResolvedValue(true)
+    await wrapper.get('.confirm').trigger('click')
+    await flushPromises()
+    expect(confirm).toHaveBeenCalledWith(1, false)
+    expect(wrapper.emitted('imported')).toEqual([[1]])
+    wrapper.unmount()
+  })
+
   it('does not expand the full Hot100 list when the search is empty', async () => {
     const wrapper = mount(ProblemImportView, {
       global: { stubs: { MarkdownContent: true, ConfirmDialog: true } },

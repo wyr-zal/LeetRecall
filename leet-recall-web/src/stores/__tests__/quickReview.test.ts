@@ -38,6 +38,48 @@ describe('quickReviewStore', () => {
 
   afterEach(() => vi.restoreAllMocks())
 
+  it('只应用最后发起的详情请求，等待期间保留原题', async () => {
+    const store = useQuickReviewStore()
+    await store.loadQueue()
+    let finishOld!: (value: ReviewProblemDetail) => void
+    vi.mocked(reviewApi.getProblemDetail).mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve }))
+    const oldRequest = store.loadProblem(8)
+    expect(store.currentProblemId).toBe(1)
+    await store.loadProblem(1)
+    finishOld(detail(8))
+    await oldRequest
+    expect(store.currentProblemId).toBe(1)
+    expect(store.currentProblem?.problemId).toBe(1)
+    expect(store.detailLoading).toBe(false)
+  })
+
+  it('笔记保存守卫拒绝后不加载新题或提交评分', async () => {
+    const store = useQuickReviewStore()
+    await store.loadQueue()
+    store.setBeforeProblemChange(async () => false)
+    expect(await store.loadProblem(8)).toBe(false)
+    await store.submit('KNOWN')
+    expect(reviewApi.getProblemDetail).toHaveBeenCalledTimes(1)
+    expect(reviewApi.submit).not.toHaveBeenCalled()
+    expect(store.currentProblemId).toBe(1)
+  })
+
+  it('详情加载失败保留原题，并明确暴露错误', async () => {
+    const store = useQuickReviewStore()
+    await store.loadQueue()
+    vi.mocked(reviewApi.getProblemDetail).mockRejectedValueOnce(new Error('服务不可用'))
+    expect(await store.loadProblem(8)).toBe(false)
+    expect(store.currentProblemId).toBe(1)
+    expect(store.error).toBe('服务不可用')
+  })
+
+  it('只刷新目录时不重新加载当前内容', async () => {
+    const store = useQuickReviewStore()
+    await store.loadQueue()
+    await store.refreshQueue({ reloadDetail: false })
+    expect(reviewApi.getProblemDetail).toHaveBeenCalledTimes(1)
+  })
+
   it('toggles hint and answer explicitly', () => {
     const store = useQuickReviewStore()
     store.toggleHint()

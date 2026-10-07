@@ -53,7 +53,7 @@ describe('DictationProblemPanel', () => {
     expect(wrapper.get('[data-test="problem-note-panel"]').attributes('data-problem-id')).toBe('438')
   })
 
-  it('renders the problem heading between the tabs and scrollable statement', () => {
+  it('renders the problem heading inside the scrollable statement', () => {
     const wrapper = mount(DictationProblemPanel, {
       props: {
         problemId: 438,
@@ -62,11 +62,10 @@ describe('DictationProblemPanel', () => {
       },
       slots: { header: '<header class="problem-heading">438. 题目标题</header>' },
     })
-    const html = wrapper.html()
 
-    expect(html.indexOf('pane-tabs')).toBeLessThan(html.indexOf('problem-heading'))
-    expect(html.indexOf('problem-heading')).toBeLessThan(html.indexOf('pane-body'))
-    expect(html).toContain('438. 题目标题')
+    const body = wrapper.get('.pane-body')
+    expect(body.find('.problem-heading').exists()).toBe(true)
+    expect(body.text()).toContain('438. 题目标题')
   })
 
   it('keeps recall answers hidden until they are asked for', async () => {

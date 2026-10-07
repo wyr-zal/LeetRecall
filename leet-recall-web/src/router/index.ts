@@ -15,15 +15,15 @@ const router = createRouter({
         },
         {
           path: 'dictation',
-          component: () => import('@/views/dictation/DictationView.vue'),
+          redirect: (to) => ({ path: '/quick-review', query: { ...to.query, panel: 'dictation' } }),
         },
         {
           path: 'problem-import',
-          component: () => import('@/views/problem-import/ProblemImportView.vue'),
+          redirect: (to) => ({ path: '/quick-review', query: { ...to.query, import: '1' } }),
         },
         {
           path: 'settings',
-          component: () => import('@/views/settings/SettingsView.vue'),
+          redirect: (to) => ({ path: '/quick-review', query: { ...to.query, settings: '1' } }),
         },
       ],
     },

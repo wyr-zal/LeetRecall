@@ -153,7 +153,11 @@ export const useDictationStore = defineStore('dictation', () => {
       answerVisible.value = false
       return
     }
-    revealedAnswer.value = await dictationApi.viewAnswer(currentProblemId.value, sessionId)
+    const problemId = currentProblemId.value
+    const sequence = detailRequestSequence
+    const answer = await dictationApi.viewAnswer(problemId, sessionId)
+    if (problemId !== currentProblemId.value || sequence !== detailRequestSequence) return
+    revealedAnswer.value = answer
     viewedAnswer.value = true
     answerVisible.value = true
   }

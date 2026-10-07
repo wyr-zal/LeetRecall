@@ -115,6 +115,28 @@ function saveNow(): void {
   void enqueueSave(props.problemId, markdown.value, editVersion, true)
 }
 
+// 工作台切题与导入前等待最后一次保存；失败返回 false，父层保留当前题和原文。
+async function flush(): Promise<boolean> {
+  clearDebounce()
+  try {
+    await saveQueue.catch(() => undefined)
+    while (canSave.value) {
+      await enqueueSave(props.problemId, markdown.value, editVersion, true)
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function reload(): Promise<boolean> {
+  if (!await flush()) return false
+  await loadNote(props.problemId)
+  return true
+}
+
+defineExpose({ flush, reload })
+
 function scheduleSave(): void {
   clearDebounce()
   debounceTimer = setTimeout(saveNow, 900)

@@ -24,7 +24,8 @@ const difficultyLabels: Record<Difficulty, string> = {
 </template>
 
 <style scoped>
-.problem-heading { display: grid; flex: 0 0 auto; padding: 20px 22px 16px; gap: 12px; border-bottom: 1px solid var(--border-secondary); }
+/* 位于 .pane-body 内部：负外边距抵消其 padding，随题面一起滚动。 */
+.problem-heading { display: grid; margin: -18px -20px 18px; padding: 18px 20px 14px; gap: 12px; border-bottom: 1px solid var(--border-secondary); }
 h1 { margin: 0; font-size: clamp(calc(20px * var(--ui-font-ratio)), 1.8vw, calc(26px * var(--ui-font-ratio))); font-weight: 680; line-height: 1.28; text-wrap: pretty; }
 h1 span { color: var(--primary); font-weight: 620; }
 .problem-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
@@ -33,5 +34,5 @@ h1 span { color: var(--primary); font-weight: 620; }
 .difficulty-medium { color: var(--warning); }
 .difficulty-hard { color: var(--danger); }
 .tags { display: flex; flex-wrap: wrap; gap: 6px; }
-@media (max-width: 720px) { .problem-heading { padding: 16px 16px 13px; gap: 9px; } h1 { font-size: calc(20px * var(--ui-font-ratio)); } }
+@media (max-width: 720px) { .problem-heading { padding: 15px 18px 12px; gap: 9px; } h1 { font-size: calc(20px * var(--ui-font-ratio)); } }
 </style>

@@ -19,9 +19,9 @@ export function isEditableTarget(target: EventTarget | null): boolean {
     || Boolean(target.closest('.monaco-editor'))
 }
 
-export function useReviewShortcuts(handlers: ReviewShortcutHandlers): void {
+export function useReviewShortcuts(handlers: ReviewShortcutHandlers, enabled: (event: KeyboardEvent) => boolean = () => true): void {
   function handleKeydown(event: KeyboardEvent): void {
-    if (isEditableTarget(event.target)) return
+    if (!enabled(event) || event.defaultPrevented || isEditableTarget(event.target)) return
     const action = shortcutAction(event)
     if (!action) return
     event.preventDefault()

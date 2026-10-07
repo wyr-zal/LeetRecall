@@ -54,14 +54,13 @@ function toggleAnswer(id: number): void {
       </button>
     </nav>
 
-    <slot name="header" />
-
     <div
       class="pane-body"
       role="tabpanel"
       :aria-labelledby="`dictation-tab-${activeTab}`"
       tabindex="0"
     >
+      <slot name="header" />
       <MarkdownContent
         v-if="activeTab === 'description' && props.descriptionMarkdown.trim()"
         :markdown="props.descriptionMarkdown"

@@ -3,14 +3,24 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { CircleCheck, CircleDot } from 'lucide-vue-next'
 import type { ReviewQueueItem } from '@/types/problem'
 
-const props = defineProps<{ items: ReviewQueueItem[]; currentProblemId: number | null }>()
+const props = withDefaults(defineProps<{ items: ReviewQueueItem[]; currentProblemId: number | null; active?: boolean }>(), { active: true })
 defineEmits<{ select: [problemId: number] }>()
 const queueList = ref<HTMLElement | null>(null)
 
 function scrollCurrentIntoView(block: ScrollLogicalPosition): void {
-  queueList.value
-    ?.querySelector<HTMLElement>('[aria-current="true"]')
-    ?.scrollIntoView({ block })
+  if (!props.active) return
+  const list = queueList.value
+  const current = list?.querySelector<HTMLElement>('[aria-current="true"]')
+  if (!list || !current) return
+  const container = list.getBoundingClientRect()
+  const item = current.getBoundingClientRect()
+  if (block === 'center') {
+    list.scrollTop += item.top - container.top - (list.clientHeight - item.height) / 2
+  } else if (item.top < container.top) {
+    list.scrollTop += item.top - container.top
+  } else if (item.bottom > container.bottom) {
+    list.scrollTop += item.bottom - container.bottom
+  }
 }
 
 /** 点击/切题：目标题通常已在视口内，最小滚动即可（已可见则不动）。 */
@@ -20,7 +30,7 @@ watch(() => props.currentProblemId, async () => {
 })
 
 /** 列表数据到达（首次渲染或切页回来刷新队列）：当前题滚到列表中部，打开页面即可定位。 */
-watch(() => props.items, async () => {
+watch(() => [props.items, props.active], async () => {
   await nextTick()
   scrollCurrentIntoView('center')
 }, { immediate: true })
