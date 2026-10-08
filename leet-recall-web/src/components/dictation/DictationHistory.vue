@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { ChevronRight } from 'lucide-vue-next'
 import type { DictationRecord } from '@/types/dictation'
 
-defineProps<{ records: DictationRecord[] }>()
+defineProps<{ records: DictationRecord[]; standalone?: boolean }>()
 defineEmits<{ select: [recordId: number] }>()
 
 const expanded = ref(false)
@@ -23,12 +23,12 @@ function formatDuration(seconds: number): string {
 
 <template>
   <section class="history app-card">
-    <button class="history-toggle" type="button" :aria-expanded="expanded" @click="expanded = !expanded">
+    <button v-if="!standalone" class="history-toggle" type="button" :aria-expanded="expanded" @click="expanded = !expanded">
       <ChevronRight class="chevron" :class="{ expanded }" :size="16" />
       <h2>本题记录</h2>
       <span class="count">{{ records.length }}</span>
     </button>
-    <template v-if="expanded">
+    <template v-if="standalone || expanded">
       <div class="history-head"><span>日期</span><span>正确率</span><span>用时</span><span /></div>
       <button v-for="record in records" :key="record.id" class="record" type="button" @click="$emit('select', record.id)">
         <span>{{ formatDate(record.createdAt) }}</span>

@@ -11,7 +11,7 @@ import { useQuickReviewStore } from '@/stores/quickReview'
 import QuickReviewView from '@/views/quick-review/QuickReviewView.vue'
 
 const DictationStub = defineComponent({
-  props: { active: Boolean, problemId: { type: Number, required: true }, revision: { type: Number, default: 0 } },
+  props: { active: Boolean, mobile: Boolean, problemId: { type: Number, required: true }, revision: { type: Number, default: 0 } },
   setup: () => ({ value: ref('') }),
   template: '<div data-test="dictation"><textarea v-model="value" /></div>',
 })
@@ -32,6 +32,11 @@ async function mountView(path = '/quick-review', realDictation = false) {
   if (!document.getElementById('workspace-tabs-slot')) {
     const slot = document.createElement('div')
     slot.id = 'workspace-tabs-slot'
+    document.body.appendChild(slot)
+  }
+  if (!document.getElementById('workspace-more-slot')) {
+    const slot = document.createElement('div')
+    slot.id = 'workspace-more-slot'
     document.body.appendChild(slot)
   }
   const pinia = createPinia()
@@ -263,4 +268,18 @@ describe('统一学习工作台', () => {
     expect(store.currentProblemId).toBe(1)
   })
 
+  it('向默写传递同一个手机断点状态', async () => {
+    const query = { matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    vi.stubGlobal('matchMedia', () => query)
+    try {
+      const { wrapper } = await mountView('/problems/1/dictation')
+      wrappers.push(wrapper)
+      expect(wrapper.findComponent(DictationStub).props('mobile')).toBe(true)
+      const change = query.addEventListener.mock.calls[0]?.[1] as () => void
+      query.matches = false
+      change()
+      await flushPromises()
+      expect(wrapper.findComponent(DictationStub).props('mobile')).toBe(false)
+    } finally { vi.unstubAllGlobals() }
+  })
 })

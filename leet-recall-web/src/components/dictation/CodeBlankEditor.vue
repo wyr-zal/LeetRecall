@@ -24,6 +24,7 @@ const props = defineProps<{
   answerCode?: string
   annotations?: ResolvedCodeAnnotation[]
   activeAnnotationId?: number | null
+  mobile?: boolean
 }>()
 const emit = defineEmits<{
   'update:answers': [answers: Record<string, string>]
@@ -46,6 +47,17 @@ let selectionAction: monaco.editor.IContentWidget | null = null
 let pendingSelection: CodeAnnotationAnchor | null = null
 let annotationCard: monaco.editor.IContentWidget | null = null
 let editorDisposables: monaco.IDisposable[] = []
+
+const annotationsEnabled = computed(() => Boolean(props.answerCode) && !props.mobile)
+
+function editorLayoutOptions(): monaco.editor.IEditorOptions {
+  return {
+    glyphMargin: annotationsEnabled.value,
+    lineNumbersMinChars: props.mobile ? 2 : 3,
+    lineDecorationsWidth: props.mobile ? 4 : 10,
+    folding: !props.mobile,
+  }
+}
 
 const resultMap = computed(() => new Map(props.results?.map((item) => [item.blankKey, item])))
 
@@ -120,7 +132,7 @@ onMounted(() => {
     fontSize: codeFontSize.value,
     lineHeight: codeFontSize.value + 10,
     minimap: { enabled: false },
-    lineNumbersMinChars: 3,
+    ...editorLayoutOptions(),
     padding: { top: 16, bottom: 16 },
     scrollBeyondLastLine: false,
     automaticLayout: false,
@@ -134,7 +146,6 @@ onMounted(() => {
     hover: { enabled: false },
     codeLens: false,
     lightbulb: { enabled: monaco.editor.ShowLightbulbIconMode.Off },
-    glyphMargin: Boolean(props.answerCode),
     showFoldingControls: 'never',
     overviewRulerBorder: false,
     hideCursorInOverviewRuler: true,
@@ -144,6 +155,7 @@ onMounted(() => {
   editorDisposables = [
     editor.onDidChangeCursorSelection(() => updateSelectionAction()),
     editor.onMouseDown((event) => {
+      if (!annotationsEnabled.value) return
       const target = event.target
       if (target.type !== monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) return
       const className = target.element?.className ?? ''
@@ -200,8 +212,15 @@ watch(() => [props.templateCode, props.answerCode], () => {
   if (editor) renderModel()
 })
 
+watch(() => props.mobile, () => {
+  editor?.updateOptions(editorLayoutOptions())
+  removeSelectionAction()
+  removeAnnotationCard()
+  applyAnnotationDecorations()
+})
+
 watch(() => props.annotations, () => {
-  if (editor && props.answerCode) applyAnnotationDecorations()
+  if (editor) applyAnnotationDecorations()
 }, { deep: true })
 
 watch(() => props.activeAnnotationId, (annotationId) => {
@@ -232,13 +251,12 @@ function renderModel(): void {
   annotationDecorations = null
   removeSelectionAction()
   removeAnnotationCard()
+  editor.updateOptions(editorLayoutOptions())
   if (props.answerCode) {
     editor.setValue(props.answerCode)
-    editor.updateOptions({ readOnly: true, glyphMargin: true })
     applyAnnotationDecorations()
     return
   }
-  editor.updateOptions({ readOnly: true, glyphMargin: false })
   const templateCode = stripJavaComments(props.templateCode)
   const tokenRegex = /{{(blank_\d+)}}/g
   const placeholders: Array<{ key: string; offset: number }> = []
@@ -296,7 +314,10 @@ function updateBlankLineZones(): void {
 }
 
 function applyAnnotationDecorations(): void {
-  if (!editor || !props.answerCode) return
+  if (!editor || !annotationsEnabled.value) {
+    annotationDecorations?.clear()
+    return
+  }
   const model = editor.getModel()
   if (!model) return
   const decorations: monaco.editor.IModelDeltaDecoration[] = []
@@ -334,7 +355,7 @@ function removeAnnotationCard(): void {
 }
 
 function showAnnotationCard(annotationId: number): void {
-  if (!editor || !props.answerCode) return
+  if (!editor || !annotationsEnabled.value) return
   const annotation = (props.annotations ?? []).find((item) => item.id === annotationId && item.resolved)
   if (!annotation) return
   removeAnnotationCard()
@@ -360,7 +381,7 @@ function showAnnotationCard(annotationId: number): void {
 }
 
 function updateSelectionAction(): void {
-  if (!editor || !props.answerCode) {
+  if (!editor || !annotationsEnabled.value) {
     removeSelectionAction()
     return
   }

@@ -93,4 +93,20 @@ describe('AppTopbar 手机端 ⋯ 面板', () => {
     expect(useSettingsMenu().settingsMenuOpen.value).toBe(false)
     expect(wrapper.get('header.topbar').classes()).toContain('more-open')
   })
+  it('工作台工具点击前收起更多并交接焦点，不改变路由', async () => {
+    const mounted = await mountTopbar()
+    wrapper = mounted.wrapper
+    const slot = wrapper.get('#workspace-more-slot')
+    const button = document.createElement('button')
+    slot.element.append(button)
+    await wrapper.get('.more-trigger').trigger('click')
+    button.focus()
+    let focusAtAction: Element | null = null
+    button.addEventListener('click', () => { focusAtAction = document.activeElement })
+    button.click()
+    await flushPromises()
+    expect(focusAtAction).toBe(wrapper.get('.more-trigger').element)
+    expect(wrapper.get('.more-trigger').attributes('aria-expanded')).toBe('false')
+    expect(mounted.router.currentRoute.value.path).toBe('/problems/5/notes')
+  })
 })

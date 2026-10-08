@@ -331,7 +331,7 @@ useReviewShortcuts({
             <ReviewResultButtons :loading="submitting" @select="submit" />
           </div>
           <div v-show="activePanel === 'dictation'" id="panel-dictation" class="study-panel dictation-body" role="tabpanel" aria-labelledby="tab-dictation">
-            <DictationView v-if="dictationVisited" ref="dictationPanel" :problem-id="currentProblem.problemId" :active="active && locationReady && !locationPending && activePanel === 'dictation' && !importOpen && !pickerOpen && !editing && !detailLoading && (!narrow || mobilePanel === 'dictation')" :revision="templateRevision" :show-answer="section === 'solution'" @answer="selectPanel($event ? 'solution' : 'dictation')" @next="store.move(1)" />
+            <DictationView v-if="dictationVisited" ref="dictationPanel" :mobile="narrow" :problem-id="currentProblem.problemId" :active="active && locationReady && !locationPending && activePanel === 'dictation' && !importOpen && !pickerOpen && !editing && !detailLoading && (!narrow || mobilePanel === 'dictation')" :revision="templateRevision" :show-answer="section === 'solution'" @answer="selectPanel($event ? 'solution' : 'dictation')" @next="store.move(1)" />
           </div>
         </div>
         <LoadingState v-else-if="loading || detailLoading" />

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Highlighter } from 'lucide-vue-next'
+import { Highlighter, History } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { dictationApi } from '@/api/dictation'
 import { useDictationStore } from '@/stores/dictation'
@@ -16,7 +16,7 @@ import LoadingState from '@/components/common/LoadingState.vue'
 import type { DictationRecordDetail } from '@/types/dictation'
 import type { CodeAnnotationAnchor, CodeAnnotationInput, ResolvedCodeAnnotation } from '@/types/annotation'
 
-const props = defineProps<{ problemId: number; active: boolean; revision: number; showAnswer?: boolean }>()
+const props = defineProps<{ problemId: number; active: boolean; revision: number; showAnswer?: boolean; mobile?: boolean }>()
 const emit = defineEmits<{ next: []; answer: [visible: boolean] }>()
 const CodeBlankEditor = defineAsyncComponent({
   loader: () => import('@/components/dictation/CodeBlankEditor.vue'),
@@ -34,11 +34,13 @@ const selectedAnnotationId = ref<number | null>(null)
 const deleteAnnotationId = ref<number | null>(null)
 const draftAnnotationAnchor = ref<CodeAnnotationAnchor | null>(null)
 const drawerOpen = ref(false)
+const historyOpen = ref(false)
+let recordRequest = 0
 const actionError = ref('')
 const answerPending = ref(false)
-const visibleAnnotations = computed(() => answerVisible.value ? resolvedAnnotations.value : [])
+const visibleAnnotations = computed(() => answerVisible.value && !props.mobile ? resolvedAnnotations.value : [])
 const ready = computed(() => currentProblem.value?.problemId === props.problemId && loadedRevision.value === props.revision)
-const hasDialog = computed(() => props.active && (resetOpen.value || recordDetail.value !== null || deleteAnnotationId.value !== null || drawerOpen.value))
+const hasDialog = computed(() => props.active && (resetOpen.value || recordDetail.value !== null || deleteAnnotationId.value !== null || drawerOpen.value || historyOpen.value))
 defineExpose({ hasDialog })
 let request = 0
 
@@ -66,16 +68,27 @@ async function ensureProblem(force = false): Promise<void> {
   }
 }
 watch(() => [props.active, props.problemId, props.revision, props.showAnswer], () => { void ensureProblem() }, { immediate: true })
-watch(currentProblem, (problem) => {
+watch(currentProblem, () => {
   draftAnnotationAnchor.value = null
   selectedAnnotationId.value = null
-  recordDetail.value = null
+  closeHistory()
   drawerOpen.value = false
-  if (problem) void annotationStore.load(problem.problemId, revealedAnswer.value?.fullCode ?? '')
+})
+watch(() => [props.mobile, currentProblem.value?.problemId] as const, ([mobile, problemId]) => {
+  if (!mobile && problemId) void annotationStore.load(problemId, revealedAnswer.value?.fullCode ?? '')
+}, { immediate: true })
+watch(() => [props.active, props.mobile, props.problemId, props.revision], () => {
+  closeHistory()
+  if (!props.active || props.mobile) {
+    drawerOpen.value = false
+    draftAnnotationAnchor.value = null
+    selectedAnnotationId.value = null
+    deleteAnnotationId.value = null
+  }
 })
 watch(revealedAnswer, (answer) => annotationStore.setCode(answer?.fullCode ?? ''))
 watch(answerVisible, (visible) => { if (!visible) drawerOpen.value = false })
-watch(draftAnnotationAnchor, (anchor) => { if (anchor && answerVisible.value) drawerOpen.value = true })
+watch(draftAnnotationAnchor, (anchor) => { if (anchor && answerVisible.value && !props.mobile) drawerOpen.value = true })
 
 async function perform(action: () => Promise<unknown>): Promise<void> {
   if (!props.active || !ready.value || detailLoading.value || submitting.value || answerPending.value) return
@@ -107,7 +120,7 @@ function confirmReset(): void {
   resetOpen.value = false
   if (props.showAnswer) emit('answer', false)
 }
-function openAnnotationDraft(anchor: CodeAnnotationAnchor): void { draftAnnotationAnchor.value = anchor }
+function openAnnotationDraft(anchor: CodeAnnotationAnchor): void { if (!props.mobile) draftAnnotationAnchor.value = anchor }
 async function saveNewAnnotation(input: CodeAnnotationInput): Promise<void> {
   if (await annotationStore.create(input)) draftAnnotationAnchor.value = null
 }
@@ -123,23 +136,33 @@ function selectAnnotationById(id: number): void {
   const annotation = resolvedAnnotations.value.find((item) => item.id === id)
   if (annotation) selectAnnotation(annotation)
 }
+function closeHistory(): void {
+  recordRequest += 1
+  historyOpen.value = false
+  recordDetail.value = null
+}
 async function openRecord(recordId: number): Promise<void> {
+  const sequence = ++recordRequest
+  const fromHistory = historyOpen.value
   const problemId = props.problemId
   await perform(async () => {
     const record = await dictationApi.getRecordDetail(problemId, recordId)
-    if (props.active && problemId === props.problemId) recordDetail.value = record
+    if (sequence === recordRequest && props.active && problemId === props.problemId && (!fromHistory || historyOpen.value)) recordDetail.value = record
   })
 }
 </script>
 
 <template>
   <section class="dictation-panel" :aria-busy="detailLoading">
+    <Teleport v-if="mobile && active && ready" to="#workspace-more-slot" defer>
+      <button class="history-entry" type="button" :disabled="detailLoading || submitting || answerPending" @click="historyOpen = true"><History :size="18" aria-hidden="true" />本题记录</button>
+    </Teleport>
     <p v-if="actionError || error" class="panel-error" role="alert">{{ actionError || error }} <button type="button" @click="ensureProblem()">重试</button></p>
     <LoadingState v-if="!ready && !error" />
     <div v-if="currentProblem" v-show="ready" class="editor-column" :inert="!active || detailLoading || submitting">
-      <button v-if="answerVisible" class="annotation-entry" type="button" @click="drawerOpen = true"><Highlighter :size="15" />批注 {{ resolvedAnnotations.length }}</button>
+      <button v-if="answerVisible && !mobile" class="annotation-entry" type="button" @click="drawerOpen = true"><Highlighter :size="15" />批注 {{ resolvedAnnotations.length }}</button>
       <p v-if="answerVisible && !revealedAnswer?.fullCode?.trim()" class="panel-error">这道题还没有完整答案代码。</p>
-      <CodeBlankEditor v-show="!answerVisible || revealedAnswer?.fullCode?.trim()" class="editor-slot" :template-code="currentProblem.templateCode" :answers="currentAnswers" :results="submitResult?.resultItems" :answer-code="answerVisible ? revealedAnswer?.fullCode : undefined" :annotations="visibleAnnotations" :active-annotation-id="selectedAnnotationId" @update:answers="store.updateAnswers" @create-annotation="openAnnotationDraft" @select-annotation="selectAnnotationById" />
+      <CodeBlankEditor v-show="!answerVisible || revealedAnswer?.fullCode?.trim()" class="editor-slot" :template-code="currentProblem.templateCode" :answers="currentAnswers" :results="submitResult?.resultItems" :answer-code="answerVisible ? revealedAnswer?.fullCode : undefined" :mobile="mobile" :annotations="visibleAnnotations" :active-annotation-id="selectedAnnotationId" @update:answers="store.updateAnswers" @create-annotation="openAnnotationDraft" @select-annotation="selectAnnotationById" />
       <div v-if="submitResult" class="score-message" role="status">
         <strong>{{ Math.round(submitResult.accuracy) }}%</strong>
         <span>{{ submitResult.correctCount }} / {{ submitResult.totalCount }} 个空位正确</span>
@@ -147,9 +170,14 @@ async function openRecord(recordId: number): Promise<void> {
         <button type="button" @click="emit('next')">下一题</button>
       </div>
       <DictationActions :submitting="submitting" :busy="answerPending" :viewed-answer="viewedAnswer" :answer-visible="showAnswer ?? answerVisible" @reset="resetOpen = true" @answer="toggleAnswer" @submit="perform(store.submit)" />
-      <DictationHistory class="history" :records="history" @select="openRecord" />
+      <DictationHistory v-if="!mobile" class="history" :records="history" @select="openRecord" />
     </div>
-    <WorkspaceDrawer :open="active && drawerOpen && answerVisible" title="代码批注" compact @close="drawerOpen = false">
+    <WorkspaceDrawer :open="Boolean(mobile && active && historyOpen)" title="本题记录" compact :busy="recordDetail !== null" @close="closeHistory">
+      <div class="history-drawer-content" :inert="recordDetail !== null">
+        <DictationHistory :records="history" standalone @select="openRecord" />
+      </div>
+    </WorkspaceDrawer>
+    <WorkspaceDrawer :open="active && drawerOpen && answerVisible && !mobile" title="代码批注" compact @close="drawerOpen = false">
       <AnnotationPanel :annotations="visibleAnnotations" :loading="annotationLoading" :saving="annotationSaving" :error="annotationError" :draft-anchor="draftAnnotationAnchor" :can-create="answerVisible" @cancel-create="draftAnnotationAnchor = null" @save-new="saveNewAnnotation" @save="saveAnnotation" @delete="deleteAnnotationId = $event" @select="selectAnnotation" />
     </WorkspaceDrawer>
     <ConfirmDialog :open="active && deleteAnnotationId !== null" title="删除代码批注" description="确定删除这条代码批注吗？删除后无法恢复。" confirm-label="删除批注" @confirm="confirmDeleteAnnotation" @cancel="deleteAnnotationId = null" />
@@ -162,6 +190,10 @@ async function openRecord(recordId: number): Promise<void> {
 .dictation-panel { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
 .editor-column { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; padding: 12px; gap: 8px; overflow: hidden; }
 .editor-slot { flex: 1; min-height: 160px; }
+.history-entry { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 44px; padding: 0 10px; color: var(--text-secondary); font-size: inherit; border: 1px solid var(--border-primary); border-radius: 7px; background: var(--bg-card); }
+.history-entry:hover:not(:disabled) { color: var(--text-primary); background: var(--bg-card-hover); }
+.history-entry:disabled { opacity: .55; }
+.history-drawer-content { min-height: 0; flex: 1; overflow: auto; }
 .history { flex: 0 0 auto; max-height: min(180px, 25%); margin-top: 0; overflow-y: auto; }
 .annotation-entry { display: inline-flex; align-items: center; align-self: flex-end; gap: 6px; min-height: 32px; padding: 0 10px; color: var(--text-secondary); border: 1px solid var(--border-primary); border-radius: 7px; background: var(--bg-card); }
 .score-message { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--border-primary); border-radius: 8px; background: var(--bg-input); }
@@ -170,5 +202,5 @@ async function openRecord(recordId: number): Promise<void> {
 .score-message small { color: var(--warning); }
 .score-message button { min-height: 34px; margin-left: auto; color: var(--on-primary); border: 0; border-radius: 6px; padding: 0 10px; background: var(--primary); }
 .panel-error { padding: 8px 12px; color: var(--danger-strong); background: var(--danger-soft); }
-@media (max-width: 720px) { .editor-column { padding: 8px; overflow-y: auto; } .annotation-entry { min-height: 44px; } }
+@media (max-width: 720px) { .editor-column { padding: 8px 8px max(8px, env(safe-area-inset-bottom)); overflow-y: auto; } .annotation-entry { min-height: 44px; } }
 </style>

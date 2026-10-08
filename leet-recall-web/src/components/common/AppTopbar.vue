@@ -40,6 +40,13 @@ function toggleMore(): void {
   moreOpen.value = next
 }
 
+function closeMoreForWorkspaceTool(event: MouseEvent): void {
+  if (!(event.target instanceof Element) || !event.target.closest('button:not(:disabled)')) return
+  moreOpen.value = false
+  // 先交接给常驻触发器，抽屉关闭时才能恢复到可见的焦点目标。
+  moreTrigger.value?.focus({ preventScroll: true })
+}
+
 /** 旧 /settings 地址只用来打开一次下拉，随即把参数从地址栏清掉。 */
 function applySettingsQuery(): void {
   if (route.query.settings !== '1') return
@@ -201,6 +208,7 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
     <div ref="actionsWrap" class="topbar-actions">
       <button ref="moreTrigger" class="tool-button more-trigger" type="button" :aria-expanded="moreOpen" aria-controls="more-panel" aria-label="更多工具" title="更多工具" @click="toggleMore"><MoreHorizontal :size="18" /></button>
       <div id="more-panel" class="actions-body">
+        <div id="workspace-more-slot" class="workspace-more-slot" @click.capture="closeMoreForWorkspaceTool" />
         <button class="tool-button" type="button" aria-label="导入题目" title="导入题目" :disabled="navigationBusy" @click="openTool('import')"><FileInput :size="18" /><span>导入</span></button>
         <SettingsMenu :open="settingsMenuOpen" @toggle="toggleSettings" @close="setSettingsMenuOpen(false)" />
         <div class="streak" aria-label="连续复习天数">
@@ -423,7 +431,9 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
   font-weight: 650;
 }
 
+.workspace-more-slot { display: none; }
 @media (max-width: 720px) {
+  .workspace-more-slot:not(:empty) { display: flex; flex-direction: column; }
   .topbar {
     flex-wrap: nowrap;
     padding: env(safe-area-inset-top) 8px 0;

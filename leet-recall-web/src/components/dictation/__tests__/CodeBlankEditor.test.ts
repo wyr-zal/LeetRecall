@@ -9,11 +9,18 @@ const editorState = vi.hoisted(() => ({
   readOnly: false,
   domReadOnly: false,
   modelValue: '',
+  options: {} as Record<string, unknown>,
+  selectionChanged: () => {},
+  decorationWrites: 0,
+  modelWrites: 0,
 }))
 
 vi.mock('monaco-editor/esm/vs/editor/editor.api', () => {
   let value = ''
   const model = {
+    getValue: () => value,
+    getValueInRange: () => 'return',
+    getOffsetAt: () => 0,
     getPositionAt(offset: number) {
       return { lineNumber: value.slice(0, offset).split('\n').length, column: 1 }
     },
@@ -37,29 +44,34 @@ vi.mock('monaco-editor/esm/vs/editor/editor.api', () => {
       })
       editorState.zoneHeights = nextHeights
     },
-    createDecorationsCollection: () => ({ clear: vi.fn(), set: vi.fn() }),
+    createDecorationsCollection: () => ({ clear: () => { editorState.decorationWrites = 0 }, set: (items: unknown[]) => { editorState.decorationWrites = items.length } }),
     dispose: vi.fn(),
     getModel: () => model,
+    getSelection: () => ({ isEmpty: () => false, startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 7, getStartPosition: () => ({ lineNumber: 1, column: 1 }), getEndPosition: () => ({ lineNumber: 1, column: 7 }) }),
     getOption: () => 24,
     layout: vi.fn(),
-    onDidChangeCursorSelection: () => ({ dispose: vi.fn() }),
+    onDidChangeCursorSelection: (callback: () => void) => { editorState.selectionChanged = callback; return { dispose: vi.fn() } },
     onMouseDown: () => ({ dispose: vi.fn() }),
     removeContentWidget: (widget: { getDomNode: () => HTMLElement }) => {
       editorState.widgets = editorState.widgets.filter(item => item !== widget)
       widget.getDomNode().remove()
     },
     setValue: (next: string) => {
+      editorState.modelWrites += 1
       value = next
       editorState.modelValue = next
     },
     updateOptions: (options: { readOnly?: boolean; domReadOnly?: boolean }) => {
+      Object.assign(editorState.options, options)
       if (options.readOnly !== undefined) editorState.readOnly = options.readOnly
       if (options.domReadOnly !== undefined) editorState.domReadOnly = options.domReadOnly
     },
   }
   return {
+    Range: class {},
     editor: {
       create: (host: HTMLElement, options: { fontLigatures: boolean; readOnly?: boolean; domReadOnly?: boolean }) => {
+        editorState.options = { ...options }
         editorState.host = host
         editorState.fontLigatures = options.fontLigatures
         editorState.readOnly = options.readOnly ?? false
@@ -89,6 +101,9 @@ describe('CodeBlankEditor', () => {
     editorState.readOnly = false
     editorState.domReadOnly = false
     editorState.modelValue = ''
+    editorState.options = {}
+    editorState.decorationWrites = 0
+    editorState.modelWrites = 0
     vi.stubGlobal('ResizeObserver', class {
       observe() {}
       disconnect() {}
@@ -202,4 +217,34 @@ describe('CodeBlankEditor', () => {
     expect(updates?.[updates.length - 1]?.[0]).toEqual({ blank_1: 'continued' })
     wrapper.unmount()
   })
+  it('手机答案零批注也不留 gutter，答案更新不会重新启用', async () => {
+    const wrapper = mount(CodeBlankEditor, { props: { templateCode: '{{blank_1}}', answers: {}, answerCode: 'return 1;', mobile: true } })
+    await wrapper.vm.$nextTick()
+    expect(editorState.options).toMatchObject({ glyphMargin: false, lineNumbersMinChars: 2, lineDecorationsWidth: 4, folding: false, readOnly: true, domReadOnly: true })
+    await wrapper.setProps({ answerCode: 'return 2;' })
+    expect(editorState.options.glyphMargin).toBe(false)
+    editorState.selectionChanged()
+    expect(wrapper.find('.annotation-selection-action').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('桌面切手机清理批注和选区动作，但不重建模型；恢复桌面功能', async () => {
+    const annotation = { id: 1, problemId: 1, anchorText: 'return', occurrenceIndex: 0, startLine: 1, startColumn: 1, endLine: 1, endColumn: 7, contentMarkdown: '说明', createdAt: '', updatedAt: '', resolved: true, relocated: false }
+    const wrapper = mount(CodeBlankEditor, { props: { templateCode: '{{blank_1}}', answers: {}, answerCode: 'return 1;', annotations: [annotation] } })
+    await wrapper.vm.$nextTick()
+    editorState.selectionChanged()
+    expect(wrapper.find('.annotation-selection-action').exists()).toBe(true)
+    expect(editorState.decorationWrites).toBe(1)
+    const writes = editorState.modelWrites
+    await wrapper.setProps({ mobile: true })
+    expect(editorState.options.glyphMargin).toBe(false)
+    expect(editorState.decorationWrites).toBe(0)
+    expect(wrapper.find('.annotation-selection-action').exists()).toBe(false)
+    expect(editorState.modelWrites).toBe(writes)
+    await wrapper.setProps({ mobile: false })
+    expect(editorState.options).toMatchObject({ glyphMargin: true, lineNumbersMinChars: 3, folding: true })
+    expect(editorState.decorationWrites).toBe(1)
+    wrapper.unmount()
+  })
+
 })
