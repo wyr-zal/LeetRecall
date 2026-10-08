@@ -102,4 +102,45 @@ describe('dictationStore', () => {
     expect(store.answerVisible).toBe(false)
     expect(store.currentAnswers.blank_1).toBe('root')
   })
+
+  it('确保展开是幂等动作，使用接收浏览器的会话且不自动提交', async () => {
+    sessionStorage.setItem('leet-recall:dictation-session', 'receiver-session')
+    const view = vi.spyOn(dictationApi, 'viewAnswer').mockResolvedValue({ answers: {}, fullCode: '// full code' })
+    const store = useDictationStore()
+    await store.loadProblem(1)
+    await store.setAnswerVisible(true)
+    await store.setAnswerVisible(true)
+    expect(view).toHaveBeenCalledExactlyOnceWith(1, 'receiver-session')
+    expect(store.answerVisible).toBe(true)
+    expect(store.viewedAnswer).toBe(true)
+    expect(dictationApi.submit).not.toHaveBeenCalled()
+  })
+
+  it('展开中收起后，晚返回答案不得重新打开', async () => {
+    let resolve!: (answer: { answers: Record<string, string>; fullCode: string }) => void
+    vi.spyOn(dictationApi, 'viewAnswer').mockReturnValue(new Promise((done) => { resolve = done }))
+    const store = useDictationStore()
+    await store.loadProblem(1)
+    const opening = store.setAnswerVisible(true)
+    await store.setAnswerVisible(false)
+    resolve({ answers: {}, fullCode: 'late code' })
+    await opening
+    expect(store.answerVisible).toBe(false)
+    expect(store.revealedAnswer).toBeNull()
+  })
+
+  it('切题后晚到的答案不覆盖新题', async () => {
+    let resolve!: (answer: { answers: Record<string, string>; fullCode: string }) => void
+    vi.spyOn(dictationApi, 'viewAnswer').mockReturnValue(new Promise((done) => { resolve = done }))
+    const store = useDictationStore()
+    await store.loadProblem(1)
+    const opening = store.setAnswerVisible(true)
+    await store.loadProblem(8)
+    resolve({ answers: {}, fullCode: 'wrong problem' })
+    await opening
+    expect(store.currentProblemId).toBe(8)
+    expect(store.answerVisible).toBe(false)
+    expect(store.revealedAnswer).toBeNull()
+  })
+
 })

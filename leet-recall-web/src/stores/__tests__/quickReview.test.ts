@@ -147,4 +147,23 @@ describe('quickReviewStore', () => {
     expect(store.hintVisible).toBe(false)
     expect(store.answerVisible).toBe(false)
   })
+
+  it('路由初始化只取队列，不先请求本地历史题目', async () => {
+    localStorage.setItem(ACTIVE_PROBLEM_KEY, JSON.stringify(8))
+    const store = useQuickReviewStore()
+    await store.loadQueue({ loadDetail: false })
+    expect(store.todayQueue).toHaveLength(2)
+    expect(reviewApi.getProblemDetail).not.toHaveBeenCalled()
+  })
+
+  it('上一题下一题通过工作台导航，不绕过 URL', async () => {
+    const store = useQuickReviewStore()
+    await store.loadQueue()
+    const navigate = vi.fn().mockResolvedValue(true)
+    store.setProblemNavigator(navigate)
+    await store.move(1)
+    expect(navigate).toHaveBeenCalledWith(8)
+    expect(reviewApi.getProblemDetail).toHaveBeenCalledTimes(1)
+  })
+
 })

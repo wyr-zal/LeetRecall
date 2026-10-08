@@ -42,6 +42,8 @@ export const useDictationStore = defineStore('dictation', () => {
   const error = ref('')
   const sessionId = createSessionId()
   let detailRequestSequence = 0
+  let answerRequestSequence = 0
+  let answerRequest: Promise<void> | null = null
 
   const currentIndex = computed(() => todayQueue.value.findIndex(
     (item) => item.problemId === currentProblemId.value,
@@ -105,6 +107,7 @@ export const useDictationStore = defineStore('dictation', () => {
 
   async function loadProblem(problemId: number): Promise<void> {
     const requestSequence = ++detailRequestSequence
+    cancelAnswerRequest()
     detailLoading.value = true
     error.value = ''
     try {
@@ -139,27 +142,46 @@ export const useDictationStore = defineStore('dictation', () => {
   }
 
   function reset(): void {
+    cancelAnswerRequest()
     updateAnswers({})
     submitResult.value = null
     answerVisible.value = false
     revealedAnswer.value = null
   }
 
-  /** 首次显示会向后端留痕（本次最高 60 分），之后可在答案与默写之间自由切换，草稿不丢。
-   *  每次打开都重新拉取，避免题目被导入覆盖后仍显示旧答案。 */
-  async function toggleAnswer(): Promise<void> {
-    if (currentProblemId.value === null) return
-    if (answerVisible.value) {
+  function cancelAnswerRequest(): void {
+    answerRequestSequence += 1
+    answerRequest = null
+  }
+
+  /** 路由恢复是确保状态，不是切换；收起和切题都会使晚到的展开响应失效。 */
+  async function setAnswerVisible(visible: boolean): Promise<void> {
+    if (!visible) {
+      cancelAnswerRequest()
       answerVisible.value = false
       return
     }
+    if (currentProblemId.value === null || answerVisible.value) return
+    if (answerRequest) return answerRequest
     const problemId = currentProblemId.value
-    const sequence = detailRequestSequence
-    const answer = await dictationApi.viewAnswer(problemId, sessionId)
-    if (problemId !== currentProblemId.value || sequence !== detailRequestSequence) return
-    revealedAnswer.value = answer
-    viewedAnswer.value = true
-    answerVisible.value = true
+    const detailSequence = detailRequestSequence
+    const sequence = ++answerRequestSequence
+    answerRequest = (async () => {
+      try {
+        const answer = await dictationApi.viewAnswer(problemId, sessionId)
+        if (problemId !== currentProblemId.value || detailSequence !== detailRequestSequence || sequence !== answerRequestSequence) return
+        revealedAnswer.value = answer
+        viewedAnswer.value = true
+        answerVisible.value = true
+      } finally {
+        if (sequence === answerRequestSequence) answerRequest = null
+      }
+    })()
+    return answerRequest
+  }
+
+  async function toggleAnswer(): Promise<void> {
+    await setAnswerVisible(!answerVisible.value)
   }
 
   async function submit(): Promise<void> {
@@ -220,6 +242,7 @@ export const useDictationStore = defineStore('dictation', () => {
     updateAnswers,
     reset,
     toggleAnswer,
+    setAnswerVisible,
     submit,
     loadHistory,
     move,

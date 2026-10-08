@@ -41,7 +41,17 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
   const editError = ref('')
   const contentRevision = ref(0)
   let detailRequestSequence = 0
+  let problemNavigator: ((problemId: number) => Promise<boolean>) | undefined
   let beforeProblemChange: (() => Promise<boolean>) | undefined
+
+  function setProblemNavigator(navigator?: (problemId: number) => Promise<boolean>): void {
+    problemNavigator = navigator
+  }
+
+  function cancelProblemLoad(): void {
+    detailRequestSequence += 1
+    detailLoading.value = false
+  }
 
   function setBeforeProblemChange(guard?: () => Promise<boolean>): void {
     beforeProblemChange = guard
@@ -55,12 +65,13 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
     ? {}
     : recallDrafts.value[currentProblemId.value] ?? {})
 
-  async function loadQueue(): Promise<void> {
+  async function loadQueue(options?: { loadDetail?: boolean }): Promise<void> {
     loading.value = true
     error.value = ''
     try {
       const queue = await reviewApi.getTodayQueue()
       todayQueue.value = queue.items
+      if (options?.loadDetail === false) return
       const activeProblemId = readActiveProblemId()
       if (activeProblemId !== null && queue.items.some((item) => item.problemId === activeProblemId)) {
         currentProblemId.value = activeProblemId
@@ -195,8 +206,8 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
     }
   }
 
-  async function openProblem(problemId: number): Promise<void> {
-    await loadProblem(problemId)
+  async function openProblem(problemId: number): Promise<boolean> {
+    return problemNavigator ? problemNavigator(problemId) : loadProblem(problemId)
   }
 
   let saveStateTimer: ReturnType<typeof setTimeout> | undefined
@@ -231,8 +242,9 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
     if (beforeProblemChange && !await beforeProblemChange()) return null
     if (submitting.value || detailLoading.value || currentProblem.value !== problem) return null
     submitting.value = true
+    let response: ReviewSubmitResult
     try {
-      const response = await reviewApi.submit(problem.problemId, {
+      response = await reviewApi.submit(problem.problemId, {
         result,
         recallAnswers: problem.recallQuestions.map((question) => ({
           questionId: question.id,
@@ -248,11 +260,11 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
         queueItem.todayResult = result
         queueItem.masteryLevel = result
       }
-      await moveToNextIncomplete()
-      return response
     } finally {
       submitting.value = false
     }
+    await moveToNextIncomplete()
+    return response
   }
 
   async function moveToNextIncomplete(): Promise<void> {
@@ -260,7 +272,7 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
     const start = Math.max(0, currentIndex.value)
     const ordered = [...todayQueue.value.slice(start + 1), ...todayQueue.value.slice(0, start + 1)]
     const next = ordered.find((item) => !item.completed)
-    if (next) await loadProblem(next.problemId)
+    if (next) await openProblem(next.problemId)
   }
 
   async function move(delta: -1 | 1): Promise<void> {
@@ -269,7 +281,7 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
     const index = currentIndex.value < 0 ? 0 : currentIndex.value
     const nextIndex = (index + delta + todayQueue.value.length) % todayQueue.value.length
     const next = todayQueue.value[nextIndex]
-    if (next) await loadProblem(next.problemId)
+    if (next) await openProblem(next.problemId)
   }
 
   function persistCurrent(): void {
@@ -297,6 +309,8 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
     editError,
     contentRevision,
     setBeforeProblemChange,
+    setProblemNavigator,
+    cancelProblemLoad,
     completedCount,
     currentIndex,
     currentDraft,

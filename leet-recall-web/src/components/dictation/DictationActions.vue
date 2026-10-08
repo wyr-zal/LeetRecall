@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineProps<{ submitting: boolean; viewedAnswer: boolean; answerVisible: boolean }>()
+defineProps<{ submitting: boolean; busy?: boolean; viewedAnswer: boolean; answerVisible: boolean }>()
 defineEmits<{ reset: []; answer: []; submit: [] }>()
 </script>
 
@@ -9,7 +9,7 @@ defineEmits<{ reset: []; answer: []; submit: [] }>()
     <button type="button" @click="$emit('answer')">
       <kbd>A</kbd>{{ answerVisible ? '返回默写' : (viewedAnswer ? '再看答案' : '显示答案') }}
     </button>
-    <button type="button" class="primary" :disabled="submitting" @click="$emit('submit')">
+    <button type="button" class="primary" :disabled="submitting || busy" @click="$emit('submit')">
       <kbd>Ctrl ↵</kbd>{{ submitting ? '正在评分…' : '提交默写' }}
     </button>
   </div>

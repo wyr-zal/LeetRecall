@@ -16,8 +16,8 @@ import LoadingState from '@/components/common/LoadingState.vue'
 import type { DictationRecordDetail } from '@/types/dictation'
 import type { CodeAnnotationAnchor, CodeAnnotationInput, ResolvedCodeAnnotation } from '@/types/annotation'
 
-const props = defineProps<{ problemId: number; active: boolean; revision: number }>()
-const emit = defineEmits<{ next: [] }>()
+const props = defineProps<{ problemId: number; active: boolean; revision: number; showAnswer?: boolean }>()
+const emit = defineEmits<{ next: []; answer: [visible: boolean] }>()
 const CodeBlankEditor = defineAsyncComponent({
   loader: () => import('@/components/dictation/CodeBlankEditor.vue'),
   loadingComponent: LoadingState,
@@ -35,6 +35,7 @@ const deleteAnnotationId = ref<number | null>(null)
 const draftAnnotationAnchor = ref<CodeAnnotationAnchor | null>(null)
 const drawerOpen = ref(false)
 const actionError = ref('')
+const answerPending = ref(false)
 const visibleAnnotations = computed(() => answerVisible.value ? resolvedAnnotations.value : [])
 const ready = computed(() => currentProblem.value?.problemId === props.problemId && loadedRevision.value === props.revision)
 const hasDialog = computed(() => props.active && (resetOpen.value || recordDetail.value !== null || deleteAnnotationId.value !== null || drawerOpen.value))
@@ -42,13 +43,29 @@ defineExpose({ hasDialog })
 let request = 0
 
 async function ensureProblem(force = false): Promise<void> {
-  if (!props.active || (!force && ready.value)) return
   const sequence = ++request
-  const revision = props.revision
-  await store.loadProblem(props.problemId)
-  if (sequence === request && currentProblem.value?.problemId === props.problemId && !error.value) loadedRevision.value = revision
+  actionError.value = ''
+  answerPending.value = false
+  if (props.showAnswer === false) await store.setAnswerVisible(false)
+  if (!props.active || sequence !== request) return
+  try {
+    if (force || !ready.value) {
+      const revision = props.revision
+      await store.loadProblem(props.problemId)
+      if (sequence !== request || currentProblem.value?.problemId !== props.problemId || error.value) return
+      loadedRevision.value = revision
+    }
+    if (props.showAnswer !== undefined) {
+      answerPending.value = props.showAnswer && !answerVisible.value
+      await store.setAnswerVisible(props.showAnswer)
+    }
+  } catch (cause) {
+    if (sequence === request) actionError.value = cause instanceof Error ? cause.message : '答案读取失败，请重试'
+  } finally {
+    if (sequence === request) answerPending.value = false
+  }
 }
-watch(() => [props.active, props.problemId, props.revision], () => { void ensureProblem() }, { immediate: true })
+watch(() => [props.active, props.problemId, props.revision, props.showAnswer], () => { void ensureProblem() }, { immediate: true })
 watch(currentProblem, (problem) => {
   draftAnnotationAnchor.value = null
   selectedAnnotationId.value = null
@@ -61,7 +78,7 @@ watch(answerVisible, (visible) => { if (!visible) drawerOpen.value = false })
 watch(draftAnnotationAnchor, (anchor) => { if (anchor && answerVisible.value) drawerOpen.value = true })
 
 async function perform(action: () => Promise<unknown>): Promise<void> {
-  if (!props.active || !ready.value || detailLoading.value || submitting.value) return
+  if (!props.active || !ready.value || detailLoading.value || submitting.value || answerPending.value) return
   actionError.value = ''
   try { await action() }
   catch (cause) { actionError.value = cause instanceof Error ? cause.message : '操作失败，请重试' }
@@ -72,16 +89,24 @@ function handleKeydown(event: KeyboardEvent): void {
   if (document.activeElement?.closest('[role="dialog"], [role="alertdialog"]')) return
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
     event.preventDefault()
-    void perform(store.submit)
+    if (!answerPending.value) void perform(store.submit)
   } else if (!isEditableTarget(event.target) && event.key.toLowerCase() === 'a') {
     event.preventDefault()
-    void perform(store.toggleAnswer)
+    toggleAnswer()
   }
 }
 onMounted(() => window.addEventListener('keydown', handleKeydown))
-onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
+onBeforeUnmount(() => { request += 1; void store.setAnswerVisible(false); window.removeEventListener('keydown', handleKeydown) })
 
-function confirmReset(): void { store.reset(); resetOpen.value = false }
+function toggleAnswer(): void {
+  if (props.showAnswer !== undefined) emit('answer', !props.showAnswer)
+  else void perform(store.toggleAnswer)
+}
+function confirmReset(): void {
+  store.reset()
+  resetOpen.value = false
+  if (props.showAnswer) emit('answer', false)
+}
 function openAnnotationDraft(anchor: CodeAnnotationAnchor): void { draftAnnotationAnchor.value = anchor }
 async function saveNewAnnotation(input: CodeAnnotationInput): Promise<void> {
   if (await annotationStore.create(input)) draftAnnotationAnchor.value = null
@@ -109,18 +134,19 @@ async function openRecord(recordId: number): Promise<void> {
 
 <template>
   <section class="dictation-panel" :aria-busy="detailLoading">
-    <p v-if="actionError || error" class="panel-error" role="alert">{{ actionError || error }} <button v-if="error" type="button" @click="ensureProblem(true)">重试</button></p>
+    <p v-if="actionError || error" class="panel-error" role="alert">{{ actionError || error }} <button type="button" @click="ensureProblem()">重试</button></p>
     <LoadingState v-if="!ready && !error" />
     <div v-if="currentProblem" v-show="ready" class="editor-column" :inert="!active || detailLoading || submitting">
       <button v-if="answerVisible" class="annotation-entry" type="button" @click="drawerOpen = true"><Highlighter :size="15" />批注 {{ resolvedAnnotations.length }}</button>
-      <CodeBlankEditor class="editor-slot" :template-code="currentProblem.templateCode" :answers="currentAnswers" :results="submitResult?.resultItems" :answer-code="answerVisible ? revealedAnswer?.fullCode : undefined" :annotations="visibleAnnotations" :active-annotation-id="selectedAnnotationId" @update:answers="store.updateAnswers" @create-annotation="openAnnotationDraft" @select-annotation="selectAnnotationById" />
+      <p v-if="answerVisible && !revealedAnswer?.fullCode?.trim()" class="panel-error">这道题还没有完整答案代码。</p>
+      <CodeBlankEditor v-show="!answerVisible || revealedAnswer?.fullCode?.trim()" class="editor-slot" :template-code="currentProblem.templateCode" :answers="currentAnswers" :results="submitResult?.resultItems" :answer-code="answerVisible ? revealedAnswer?.fullCode : undefined" :annotations="visibleAnnotations" :active-annotation-id="selectedAnnotationId" @update:answers="store.updateAnswers" @create-annotation="openAnnotationDraft" @select-annotation="selectAnnotationById" />
       <div v-if="submitResult" class="score-message" role="status">
         <strong>{{ Math.round(submitResult.accuracy) }}%</strong>
         <span>{{ submitResult.correctCount }} / {{ submitResult.totalCount }} 个空位正确</span>
         <small v-if="submitResult.viewedAnswer">查看过答案，本次最高计 60 分</small>
         <button type="button" @click="emit('next')">下一题</button>
       </div>
-      <DictationActions :submitting="submitting" :viewed-answer="viewedAnswer" :answer-visible="answerVisible" @reset="resetOpen = true" @answer="perform(store.toggleAnswer)" @submit="perform(store.submit)" />
+      <DictationActions :submitting="submitting" :busy="answerPending" :viewed-answer="viewedAnswer" :answer-visible="showAnswer ?? answerVisible" @reset="resetOpen = true" @answer="toggleAnswer" @submit="perform(store.submit)" />
       <DictationHistory class="history" :records="history" @select="openRecord" />
     </div>
     <WorkspaceDrawer :open="active && drawerOpen && answerVisible" title="代码批注" compact @close="drawerOpen = false">

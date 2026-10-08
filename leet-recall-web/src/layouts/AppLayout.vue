@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router'
 import AppTopbar from '@/components/common/AppTopbar.vue'
 
 const route = useRoute()
-const overlayOpen = computed(() => route.path === '/quick-review' && (route.query.import === '1' || route.query.picker === '1'))
+const overlayOpen = computed(() => Boolean(route.meta.workspace) && (route.query.import === '1' || route.query.picker === '1'))
 </script>
 
 <template>

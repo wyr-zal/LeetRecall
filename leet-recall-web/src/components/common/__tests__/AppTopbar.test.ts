@@ -9,10 +9,10 @@ import { useSettingsMenu } from '@/composables/useSettingsMenu'
 async function mountTopbar() {
   const pinia = createPinia()
   const router = createRouter({ history: createMemoryHistory(), routes: [
-    { path: '/quick-review', component: { template: '<p>工作台</p>' } },
+    { path: '/problems/:leetcodeNumber/:section', meta: { workspace: true }, component: { template: '<p>工作台</p>' } },
     { path: '/other', component: { template: '<p>其他</p>' } },
   ] })
-  await router.push('/quick-review')
+  await router.push('/problems/5/notes')
   await router.isReady()
   const wrapper = mount(AppTopbar, { attachTo: document.body, global: { plugins: [pinia, router] } })
   await flushPromises()
@@ -75,7 +75,7 @@ describe('AppTopbar 手机端 ⋯ 面板', () => {
     expect(wrapper.get('header.topbar').classes()).not.toContain('more-open')
 
     await wrapper.get('.more-trigger').trigger('click')
-    await router.push('/quick-review?panel=notes')
+    await router.push('/problems/5/recall')
     await flushPromises()
     expect(wrapper.get('header.topbar').classes()).not.toContain('more-open')
   })

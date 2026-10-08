@@ -15,7 +15,7 @@ const route = useRoute()
 const reviewStore = useQuickReviewStore()
 const dictationStore = useDictationStore()
 const { settingsMenuOpen, setSettingsMenuOpen } = useSettingsMenu()
-const isWorkspace = computed(() => route.path === '/quick-review')
+const isWorkspace = computed(() => Boolean(route.meta.workspace))
 const navigationBusy = computed(() => reviewStore.loading || reviewStore.detailLoading || reviewStore.submitting || reviewStore.editing || dictationStore.submitting)
 
 function openTool(tool: 'picker' | 'import'): void {
@@ -24,7 +24,7 @@ function openTool(tool: 'picker' | 'import'): void {
   const query = isWorkspace.value ? { ...route.query } : {}
   delete query.picker
   delete query.import
-  void router.push({ path: '/quick-review', query: { ...query, [tool]: '1' } })
+  void router.push({ path: isWorkspace.value ? route.path : '/problems', query: { ...query, [tool]: '1' } })
 }
 
 function toggleSettings(): void {
@@ -139,8 +139,9 @@ function closeMoreOnEscape(event: KeyboardEvent): void {
 
 async function selectProblem(problem: ProblemSearchItem): Promise<void> {
   if (navigationBusy.value) return
-  if (!isWorkspace.value) await router.push('/quick-review')
-  if (!await reviewStore.loadProblem(problem.problemId)) return
+  if (!isWorkspace.value) {
+    await router.push(`/problems/${problem.leetcodeNumber}/notes`)
+  } else if (!await reviewStore.openProblem(problem.problemId)) return
   keyword.value = ''
   searchOpen.value = false
 }
@@ -149,7 +150,7 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
 <template>
   <header class="topbar" :class="{ 'more-open': moreOpen }">
     <div class="topbar-start">
-      <RouterLink class="topbar-brand" to="/quick-review" aria-label="LeetRecall 学习工作台">
+      <RouterLink class="topbar-brand" :to="isWorkspace ? route.path : '/problems'" aria-label="LeetRecall 学习工作台">
         <Braces :size="21" aria-hidden="true" />
         <strong>LeetRecall</strong>
       </RouterLink>

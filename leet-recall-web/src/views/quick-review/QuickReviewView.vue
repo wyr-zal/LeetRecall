@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
-import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
+import { type RouteLocationNormalized, onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { BrainCircuit, FileText, NotebookPen, SquarePen } from 'lucide-vue-next'
 import { useQuickReviewStore } from '@/stores/quickReview'
@@ -19,6 +19,7 @@ import ReviewQueue from '@/components/review/ReviewQueue.vue'
 import KeyboardShortcutPanel from '@/components/review/KeyboardShortcutPanel.vue'
 import WorkspaceDrawer from '@/components/common/WorkspaceDrawer.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
+import { readWorkspaceLocation, workspaceTarget, type WorkspaceSection } from '@/utils/workspaceLocation'
 import type { MasteryLevel, ProblemContentUpdate } from '@/types/problem'
 
 const DictationView = defineAsyncComponent(() => import('@/views/dictation/DictationView.vue'))
@@ -41,8 +42,16 @@ const MOBILE_LABELS: Record<Panel, string> = { notes: '笔记', recall: '回忆'
 const mobileQuery = window.matchMedia?.('(max-width: 720px)')
 const narrow = ref(mobileQuery?.matches ?? false)
 function syncWidth(): void { narrow.value = mobileQuery?.matches ?? false }
-const activePanel = computed<Panel>(() => PANELS.some((panel) => panel.key === route.query.panel) ? route.query.panel as Panel : 'notes')
-const mobilePanel = ref<Panel | 'description'>(route.query.panel ? activePanel.value : 'description')
+const location = computed(() => {
+  try { return readWorkspaceLocation(route, narrow.value ? 'description' : 'notes') }
+  catch { return null }
+})
+const section = computed(() => location.value?.section ?? 'notes')
+const activePanel = computed<Panel>(() => section.value === 'description' ? 'notes' : section.value === 'solution' ? 'dictation' : section.value)
+const mobilePanel = computed(() => section.value === 'solution' ? 'dictation' : section.value)
+const locationError = ref('')
+const locationPending = ref(false)
+const locationReady = computed(() => !locationError.value && !!currentProblem.value && currentProblem.value.leetcodeNumber === location.value?.leetcodeNumber)
 const active = ref(true)
 const importOpen = computed(() => active.value && route.query.import === '1')
 const pickerOpen = computed(() => active.value && route.query.picker === '1')
@@ -51,14 +60,14 @@ const dictationVisited = ref(activePanel.value === 'dictation')
 const importing = ref(false)
 const notice = ref('')
 const statementBody = ref<HTMLElement | null>(null)
+const recallBody = ref<HTMLElement | null>(null)
 const notePanel = ref<InstanceType<typeof ProblemNotePanel> | null>(null)
 const dictationPanel = ref<{ hasDialog: boolean } | null>(null)
-const blocked = computed(() => loading.value || detailLoading.value || submitting.value || dictationStore.submitting || importing.value)
+const blocked = computed(() => locationPending.value || loading.value || detailLoading.value || submitting.value || dictationStore.submitting || importing.value)
 const notesRevision = ref(0)
 const templateRevision = ref(0)
 
 watch(activePanel, (panel) => {
-  mobilePanel.value = panel
   if (panel === 'dictation') dictationVisited.value = true
 })
 watch(importOpen, (open) => { if (open) importVisited.value = true })
@@ -86,30 +95,124 @@ async function canChangeProblem(): Promise<boolean> {
   return saveNote()
 }
 
+let navigationSequence = 0
+let queueLoaded = todayQueue.value.length > 0
+let queueRequest: Promise<void> | null = null
+let locationTask: Promise<void> = Promise.resolve()
+
+async function syncLocation(force = false): Promise<void> {
+  if (!route.meta.workspace) return
+  const sequence = ++navigationSequence
+  if (force) queueLoaded = false
+  store.cancelProblemLoad()
+  locationPending.value = true
+  locationError.value = ''
+  error.value = ''
+  try {
+    const target = readWorkspaceLocation(route, narrow.value ? 'description' : 'notes')
+    if (!queueLoaded) {
+      queueRequest ??= store.loadQueue({ loadDetail: false })
+      await queueRequest
+      if (sequence !== navigationSequence) return
+      queueRequest = null
+      if (error.value) throw new Error(error.value)
+      queueLoaded = true
+    }
+    const item = target.leetcodeNumber === null
+      ? todayQueue.value.find(item => item.problemId === currentProblemId.value)
+        ?? todayQueue.value.find(item => !item.completed) ?? todayQueue.value[0]
+      : todayQueue.value.find(item => item.leetcodeNumber === target.leetcodeNumber)
+    if (!item) throw new Error(target.leetcodeNumber === null ? '暂无可学习题目。' : `LeetCode 第 ${target.leetcodeNumber} 题不存在或未启用。`)
+    const canonical = workspaceTarget(item.leetcodeNumber, target.section, route.query)
+    if (router.resolve(canonical).fullPath !== route.fullPath) {
+      await router.replace(canonical)
+      return
+    }
+    if (force || currentProblem.value?.problemId !== item.problemId) {
+      if (!await store.loadProblem(item.problemId, { keepPanelState: currentProblem.value?.problemId === item.problemId })) {
+        if (sequence === navigationSequence) throw new Error(error.value || '题目加载失败，请重试。')
+        return
+      }
+    }
+    if (sequence !== navigationSequence) return
+    if (target.section === 'recall') {
+      answerVisible.value = target.answer
+      if (target.answer) {
+        await nextTick()
+        const body = recallBody.value
+        const answer = body?.querySelector('.answer-panel')
+        if (sequence === navigationSequence && body && answer) body.scrollTop += answer.getBoundingClientRect().top - body.getBoundingClientRect().top
+      }
+    }
+  } catch (cause) {
+    if (sequence === navigationSequence) locationError.value = cause instanceof Error ? cause.message : '链接加载失败，请重试。'
+  } finally {
+    if (sequence === navigationSequence) locationPending.value = false
+  }
+}
+
+function restoreLocation(force = false): void { locationTask = syncLocation(force) }
+watch([() => route.path, () => route.query.problem, () => route.query.panel, () => route.query.answer], () => restoreLocation())
+
+async function navigateProblem(problemId: number): Promise<boolean> {
+  if (blocked.value || editing.value) return false
+  const item = todayQueue.value.find(item => item.problemId === problemId)
+  if (!item) return false
+  const query = { ...route.query }
+  delete query.answer
+  const result = await router.push(workspaceTarget(item.leetcodeNumber, section.value === 'solution' ? 'dictation' : section.value, query))
+  if (result) return currentProblemId.value === problemId
+  await locationTask
+  return !locationError.value && currentProblemId.value === problemId
+}
+
+function connectNavigation(): void {
+  store.setBeforeProblemChange(canChangeProblem)
+  store.setProblemNavigator(navigateProblem)
+}
+function disconnectNavigation(): void {
+  store.setBeforeProblemChange()
+  store.setProblemNavigator()
+  navigationSequence += 1
+  store.cancelProblemLoad()
+}
 onMounted(() => {
   mobileQuery?.addEventListener('change', syncWidth)
-  store.setBeforeProblemChange(canChangeProblem)
-  if (!currentProblem.value) void store.loadQueue()
+  connectNavigation()
+  restoreLocation()
 })
-onActivated(() => { active.value = true; store.setBeforeProblemChange(canChangeProblem) })
-onDeactivated(() => { active.value = false; store.setBeforeProblemChange() })
+onActivated(() => { active.value = true; connectNavigation() })
+onDeactivated(() => { active.value = false; disconnectNavigation() })
 onBeforeUnmount(() => {
   mobileQuery?.removeEventListener('change', syncWidth)
-  store.setBeforeProblemChange()
-})
-onBeforeRouteLeave(async () => !blocked.value && await canChangeProblem())
-onBeforeRouteUpdate(async (to) => {
-  if (importing.value) return false
-  if (to.query.import === '1' && route.query.import !== '1') return !blocked.value && await canChangeProblem()
-  if (editing.value && to.query.panel !== route.query.panel) return canChangeProblem()
-  if (dictationStore.submitting && to.query.panel !== route.query.panel) return false
-  return true
+  disconnectNavigation()
 })
 
-function selectPanel(panel: Panel | 'description'): void {
-  if (blocked.value || editing.value) return
-  mobilePanel.value = panel
-  if (panel !== 'description') void router.push({ query: { ...route.query, panel } })
+async function guardLocation(to: RouteLocationNormalized): Promise<boolean> {
+  if (importing.value) return false
+  if (to.query.import === '1' && route.query.import !== '1') return !blocked.value && await canChangeProblem()
+  const contentChanged = to.path !== route.path || to.query.problem !== route.query.problem || to.query.panel !== route.query.panel || to.query.answer !== route.query.answer
+  if (!contentChanged) return true
+  if (submitting.value || dictationStore.submitting) return false
+  if (editing.value) return canChangeProblem()
+  let nextNumber: number | null = null
+  try { nextNumber = readWorkspaceLocation(to).leetcodeNumber } catch { /* 无效链接也须先保存当前笔记。 */ }
+  return nextNumber === currentProblem.value?.leetcodeNumber || !currentProblem.value || await canChangeProblem()
+}
+onBeforeRouteLeave(async to => to.meta.workspace ? guardLocation(to) : !blocked.value && await canChangeProblem())
+onBeforeRouteUpdate(guardLocation)
+
+async function selectPanel(panel: WorkspaceSection): Promise<void> {
+  if (blocked.value || editing.value || !currentProblem.value) return
+  await router.push(workspaceTarget(currentProblem.value.leetcodeNumber, panel, route.query))
+}
+
+function toggleRecallAnswer(): void {
+  if (activePanel.value !== 'recall' || blocked.value) return
+  const query = { ...route.query }
+  if (answerVisible.value) delete query.answer
+  else query.answer = '1'
+  void router.replace({ path: route.path, query })
 }
 
 function panelKeydown(event: KeyboardEvent, index: number): void {
@@ -134,7 +237,7 @@ function closeTools(): void {
 
 async function pickProblem(problemId: number): Promise<void> {
   if (blocked.value) return
-  if (await store.loadProblem(problemId)) closeTools()
+  if (await store.openProblem(problemId)) closeTools()
 }
 
 async function imported(problemId: number): Promise<void> {
@@ -158,7 +261,7 @@ function recallAction(action: () => void): void {
 
 async function enterEdit(): Promise<void> {
   if (blocked.value || !await saveNote()) return
-  mobilePanel.value = 'notes'
+  await selectPanel('notes')
   await store.enterEdit()
 }
 
@@ -171,7 +274,7 @@ useReviewShortcuts({
   onFuzzy: () => void submit('FUZZY'),
   onKnown: () => void submit('KNOWN'),
   onToggleHint: () => recallAction(store.toggleHint),
-  onToggleAnswer: () => recallAction(store.toggleAnswer),
+  onToggleAnswer: toggleRecallAnswer,
   onNext: () => void store.move(1),
   onPrevious: () => void store.move(-1),
 }, (event) => ((activePanel.value === 'recall' && (!narrow.value || mobilePanel.value === 'recall')) || ['ArrowLeft', 'ArrowRight'].includes(event.key))
@@ -181,9 +284,10 @@ useReviewShortcuts({
 
 <template>
   <main class="workspace" :class="`mobile-${mobilePanel}`">
-    <div v-if="notice || error" class="workspace-error" role="alert">
-      <span>{{ notice || error }}</span>
-      <button v-if="error" type="button" @click="currentProblemId ? store.loadProblem(currentProblemId, { keepPanelState: true }) : store.loadQueue()">重试</button>
+    <div v-if="locationError || notice || error" class="workspace-error" role="alert">
+      <span>{{ locationError || notice || error }}</span>
+      <button v-if="locationError || error" type="button" @click="restoreLocation(true)">重试</button>
+      <RouterLink v-if="locationError" to="/problems">返回题目</RouterLink>
     </div>
     <Teleport to="#workspace-tabs-slot" defer>
       <nav class="mobile-tabs" aria-label="学习内容">
@@ -191,7 +295,8 @@ useReviewShortcuts({
         <button v-for="panel in PANELS" :key="panel.key" type="button" :aria-pressed="mobilePanel === panel.key" :aria-label="MOBILE_LABELS[panel.key]" :title="MOBILE_LABELS[panel.key]" @click="selectPanel(panel.key)"><component :is="panel.icon" :size="18" /></button>
       </nav>
     </Teleport>
-    <div class="workspace-grid" :aria-busy="loading || detailLoading" :inert="blocked">
+    <LoadingState v-if="locationPending && !locationReady" />
+    <div v-show="locationReady" class="workspace-grid" :aria-busy="locationPending || detailLoading" :inert="blocked">
       <section class="statement-pane">
         <header class="pane-heading"><span><FileText :size="16" /><span class="pane-heading-text">题目描述</span></span><button type="button" :disabled="!currentProblem || editing" aria-label="编辑题目" title="编辑题目" @click="enterEdit"><SquarePen :size="15" /><span class="pane-heading-text">编辑</span></button></header>
         <div ref="statementBody" class="statement-body">
@@ -217,16 +322,16 @@ useReviewShortcuts({
             <ProblemNotePanel ref="notePanel" :problem-id="currentProblem.problemId" />
           </div>
           <div v-show="activePanel === 'recall'" id="panel-recall" class="study-panel recall-body" role="tabpanel" aria-labelledby="tab-recall">
-            <div class="recall-scroll">
+            <div ref="recallBody" class="recall-scroll">
               <RecallQuestionList :questions="currentProblem.recallQuestions" :draft="currentDraft" :answers-visible="answerVisible" :save-state="saveState" @update="store.updateDraft" />
               <HintPanel :visible="hintVisible" :hint="currentProblem.hint" @toggle="store.toggleHint" />
-              <AnswerPanel :visible="answerVisible" :core-idea="currentProblem.coreIdea" :mistakes="currentProblem.mistakes" :key-code="currentProblem.keyCode" @toggle="store.toggleAnswer" />
+              <AnswerPanel :visible="answerVisible" :core-idea="currentProblem.coreIdea" :mistakes="currentProblem.mistakes" :key-code="currentProblem.keyCode" @toggle="toggleRecallAnswer" />
               <details class="shortcuts-help"><summary>键盘快捷键</summary><KeyboardShortcutPanel /></details>
             </div>
             <ReviewResultButtons :loading="submitting" @select="submit" />
           </div>
           <div v-show="activePanel === 'dictation'" id="panel-dictation" class="study-panel dictation-body" role="tabpanel" aria-labelledby="tab-dictation">
-            <DictationView v-if="dictationVisited" ref="dictationPanel" :problem-id="currentProblem.problemId" :active="active && activePanel === 'dictation' && !importOpen && !pickerOpen && !editing && !detailLoading && (!narrow || mobilePanel === 'dictation')" :revision="templateRevision" @next="store.move(1)" />
+            <DictationView v-if="dictationVisited" ref="dictationPanel" :problem-id="currentProblem.problemId" :active="active && locationReady && !locationPending && activePanel === 'dictation' && !importOpen && !pickerOpen && !editing && !detailLoading && (!narrow || mobilePanel === 'dictation')" :revision="templateRevision" :show-answer="section === 'solution'" @answer="selectPanel($event ? 'solution' : 'dictation')" @next="store.move(1)" />
           </div>
         </div>
         <LoadingState v-else-if="loading || detailLoading" />
