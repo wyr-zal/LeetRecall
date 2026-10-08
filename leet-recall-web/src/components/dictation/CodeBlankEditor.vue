@@ -112,6 +112,8 @@ onMounted(() => {
   updateEditorTheme()
   editor = monaco.editor.create(editorRef.value, {
     language: 'java',
+    readOnly: true,
+    domReadOnly: true,
     theme: 'leetRecall',
     fontFamily: '"JetBrains Mono", "Cascadia Code", Consolas, monospace',
     fontLigatures: false,
@@ -221,6 +223,10 @@ watch(resultMap, applyResultStyles)
 
 function renderModel(): void {
   if (!editor) return
+  const focused = document.activeElement
+  if (props.answerCode && focused instanceof HTMLElement && editorRef.value?.contains(focused)) {
+    focused.blur()
+  }
   disposeWidgets()
   annotationDecorations?.clear()
   annotationDecorations = null

@@ -6,6 +6,8 @@ const editorState = vi.hoisted(() => ({
   zoneHeights: [] as number[],
   host: null as HTMLElement | null,
   fontLigatures: true,
+  readOnly: false,
+  domReadOnly: false,
   modelValue: '',
 }))
 
@@ -42,18 +44,26 @@ vi.mock('monaco-editor/esm/vs/editor/editor.api', () => {
     layout: vi.fn(),
     onDidChangeCursorSelection: () => ({ dispose: vi.fn() }),
     onMouseDown: () => ({ dispose: vi.fn() }),
-    removeContentWidget: vi.fn(),
+    removeContentWidget: (widget: { getDomNode: () => HTMLElement }) => {
+      editorState.widgets = editorState.widgets.filter(item => item !== widget)
+      widget.getDomNode().remove()
+    },
     setValue: (next: string) => {
       value = next
       editorState.modelValue = next
     },
-    updateOptions: vi.fn(),
+    updateOptions: (options: { readOnly?: boolean; domReadOnly?: boolean }) => {
+      if (options.readOnly !== undefined) editorState.readOnly = options.readOnly
+      if (options.domReadOnly !== undefined) editorState.domReadOnly = options.domReadOnly
+    },
   }
   return {
     editor: {
-      create: (host: HTMLElement, options: { fontLigatures: boolean }) => {
+      create: (host: HTMLElement, options: { fontLigatures: boolean; readOnly?: boolean; domReadOnly?: boolean }) => {
         editorState.host = host
         editorState.fontLigatures = options.fontLigatures
+        editorState.readOnly = options.readOnly ?? false
+        editorState.domReadOnly = options.domReadOnly ?? false
         return editor
       },
       defineTheme: vi.fn(),
@@ -76,6 +86,8 @@ describe('CodeBlankEditor', () => {
     editorState.zoneHeights = []
     editorState.host = null
     editorState.fontLigatures = true
+    editorState.readOnly = false
+    editorState.domReadOnly = false
     editorState.modelValue = ''
     vi.stubGlobal('ResizeObserver', class {
       observe() {}
@@ -147,5 +159,47 @@ describe('CodeBlankEditor', () => {
     await answer.vm.$nextTick()
     expect(editorState.modelValue).toBe(sourceCode)
     answer.unmount()
+  })
+
+  it('完整答案同时启用模型与原生输入框只读，避免手机唤起键盘', async () => {
+    const code = 'class Solution { /* 原样展示 */ }'
+    const wrapper = mount(CodeBlankEditor, {
+      props: { templateCode: '{{blank_1}}', answers: {}, answerCode: code },
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(editorState.modelValue).toBe(code)
+    expect(editorState.readOnly).toBe(true)
+    expect(editorState.domReadOnly).toBe(true)
+    expect(wrapper.find('.dictation-blank-widget textarea').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('进入答案前释放空位焦点，返回默写保留草稿并恢复输入', async () => {
+    const wrapper = mount(CodeBlankEditor, {
+      props: { templateCode: 'return {{blank_1}};', answers: { blank_1: 'draft' } },
+      attachTo: document.body,
+    })
+    await wrapper.vm.$nextTick()
+    const input = wrapper.get('.dictation-blank-widget textarea').element as HTMLTextAreaElement
+    const blur = vi.spyOn(input, 'blur')
+    input.focus()
+    expect(document.activeElement).toBe(input)
+
+    await wrapper.setProps({ answerCode: 'return answer;' })
+    expect(blur).toHaveBeenCalledOnce()
+    expect(document.activeElement).not.toBe(input)
+    expect(wrapper.find('.dictation-blank-widget textarea').exists()).toBe(false)
+
+    await wrapper.setProps({ answerCode: undefined })
+    const restored = wrapper.get('.dictation-blank-widget textarea').element as HTMLTextAreaElement
+    expect(restored.value).toBe('draft')
+    expect(restored.readOnly).toBe(false)
+    expect(restored.disabled).toBe(false)
+    restored.value = 'continued'
+    restored.dispatchEvent(new Event('input', { bubbles: true }))
+    const updates = wrapper.emitted('update:answers')
+    expect(updates?.[updates.length - 1]?.[0]).toEqual({ blank_1: 'continued' })
+    wrapper.unmount()
   })
 })
