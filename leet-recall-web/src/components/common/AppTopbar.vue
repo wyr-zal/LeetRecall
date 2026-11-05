@@ -1,13 +1,17 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Braces, ChevronLeft, ChevronRight, FileInput, Flame, List, Moon, MoreHorizontal, Search, Sun } from 'lucide-vue-next'
+import { Braces, ChevronLeft, ChevronRight, CloudOff, FileInput, Flame, List, Moon, MoreHorizontal, Search, Sun } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
+import { storeToRefs } from 'pinia'
 import { reviewApi } from '@/api/review'
 import { useQuickReviewStore } from '@/stores/quickReview'
 import { useTheme } from '@/composables/useTheme'
 import { useDictationStore } from '@/stores/dictation'
 import { useSettingsMenu } from '@/composables/useSettingsMenu'
+import { useOfflineStore } from '@/stores/offline'
 import SettingsMenu from '@/components/common/SettingsMenu.vue'
+import { searchOfflineProblems } from '@/offline/db'
+import { readStorage, writeStorage } from '@/utils/storage'
 import type { ProblemSearchItem } from '@/types/problem'
 
 const router = useRouter()
@@ -15,6 +19,8 @@ const route = useRoute()
 const reviewStore = useQuickReviewStore()
 const dictationStore = useDictationStore()
 const { settingsMenuOpen, setSettingsMenuOpen } = useSettingsMenu()
+const offlineState = useOfflineStore()
+const { syncing: offlineSyncing, problemCount: offlineProblemCount, downloadedAt: offlineDownloadedAt } = storeToRefs(offlineState)
 const isWorkspace = computed(() => Boolean(route.meta.workspace))
 const navigationBusy = computed(() => reviewStore.loading || reviewStore.detailLoading || reviewStore.submitting || reviewStore.editing || dictationStore.submitting)
 
@@ -64,17 +70,35 @@ const activeIndex = ref(-1)
 const searchWrap = ref<HTMLElement | null>(null)
 const actionsWrap = ref<HTMLElement | null>(null)
 const moreTrigger = ref<HTMLButtonElement | null>(null)
-const streak = ref(0)
+const streak = ref(readStorage<number>('leet-recall:streak', 0))
 const moreOpen = ref(false)
 let searchTimer: ReturnType<typeof setTimeout> | undefined
+
+const offlineTitle = computed(() => {
+  if (!offlineState.hasPack) return '离线模式 · 尚未保存离线资料，联网后会自动下载'
+  const time = offlineDownloadedAt.value
+    ? new Date(offlineDownloadedAt.value).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+    : ''
+  return `离线模式 · 已保存 ${offlineProblemCount.value} 题${time ? ` · 更新于 ${time}` : ''}`
+})
+
+async function retryOffline(): Promise<void> {
+  await offlineState.sync({ force: true })
+}
 
 onMounted(async () => {
   document.addEventListener('click', closeSearchWhenClickedOutside)
   document.addEventListener('keydown', closeMoreOnEscape)
   try {
     streak.value = await reviewApi.getReviewStreak()
+    writeStorage('leet-recall:streak', streak.value)
   } catch {
-    streak.value = 0
+    // 离线时保留上一次成功获取的天数。
   }
   await router.isReady()
   applySettingsQuery()
@@ -103,6 +127,10 @@ function handleInput(): void {
     searching.value = true
     try {
       results.value = await reviewApi.searchProblems(query)
+      searchOpen.value = true
+    } catch {
+      // 离线时退回本地题库搜索；没有离线资料则展示空结果。
+      results.value = await searchOfflineProblems(query)
       searchOpen.value = true
     } finally {
       searching.value = false
@@ -206,6 +234,18 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
     <div id="workspace-tabs-slot" class="tabs-slot" />
 
     <div ref="actionsWrap" class="topbar-actions">
+      <button
+        v-if="offlineState.offline"
+        class="offline-indicator"
+        type="button"
+        :disabled="offlineSyncing"
+        :title="offlineTitle"
+        aria-label="离线模式，点击重试"
+        @click="retryOffline"
+      >
+        <CloudOff :size="16" />
+        <span>{{ offlineSyncing ? '检查中' : '离线' }}</span>
+      </button>
       <button ref="moreTrigger" class="tool-button more-trigger" type="button" :aria-expanded="moreOpen" aria-controls="more-panel" aria-label="更多工具" title="更多工具" @click="toggleMore"><MoreHorizontal :size="18" /></button>
       <div id="more-panel" class="actions-body">
         <div id="workspace-more-slot" class="workspace-more-slot" @click.capture="closeMoreForWorkspaceTool" />
@@ -290,6 +330,27 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
 .workspace-controls .problem-counter { min-width: 66px; height: 34px; padding: 0; color: var(--text-muted); border: 0; background: transparent; font-size: calc(12px * var(--ui-font-ratio)); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .workspace-controls .problem-counter:hover:not(:disabled) { color: var(--text-primary); background: transparent; }
 @media (max-width: 1100px) { .streak span, .tool-button span, .topbar-brand strong, .theme-toggle span { display: none; } }
+
+.offline-indicator {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 9px;
+  color: var(--warning);
+  border: 1px solid var(--warning);
+  border-radius: 7px;
+  background: transparent;
+  font-size: calc(12px * var(--ui-font-ratio));
+  white-space: nowrap;
+}
+
+.offline-indicator:hover:not(:disabled) { background: var(--bg-card-hover); }
+.offline-indicator:disabled { opacity: 0.6; }
+@media (max-width: 1100px) { .offline-indicator span { display: none; } }
 
 .tabs-slot { display: none; }
 .more-trigger { display: none; }
@@ -450,7 +511,9 @@ async function selectProblem(problem: ProblemSearchItem): Promise<void> {
 
   .tabs-slot { display: flex; flex: 1 1 auto; min-width: 0; }
 
-  .topbar-actions { flex: 0 0 auto; }
+  .topbar-actions { flex: 0 0 auto; gap: 4px; }
+  .offline-indicator { min-width: 40px; height: 44px; padding: 0 6px; }
+  .offline-indicator span { display: none; }
   .more-trigger { display: inline-flex; }
   .more-trigger[aria-expanded="true"] { color: var(--primary); border-color: var(--primary); }
 

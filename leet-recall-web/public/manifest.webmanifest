@@ -1,0 +1,15 @@
+{
+  "name": "LeetRecall",
+  "short_name": "LeetRecall",
+  "description": "专注于 Hot100 的快速复习与代码默写",
+  "lang": "zh-CN",
+  "start_url": "/problems",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#1a1a1a",
+  "theme_color": "#1a1a1a",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Eye, LoaderCircle, RotateCcw, Send, Undo2 } from 'lucide-vue-next'
+import { online } from '@/offline/network'
 
 const props = defineProps<{ submitting: boolean; busy?: boolean; viewedAnswer: boolean; answerVisible: boolean }>()
 defineEmits<{ reset: []; answer: []; submit: [] }>()
 const answerLabel = computed(() => props.answerVisible ? '返回默写' : (props.viewedAnswer ? '再看答案' : '显示答案'))
-const submitLabel = computed(() => props.submitting ? '正在评分…' : '提交默写')
+const submitLabel = computed(() => !online.value
+  ? '离线模式 · 提交需联网'
+  : props.submitting ? '正在评分…' : '提交默写')
 </script>
 
 <template>
@@ -17,7 +20,7 @@ const submitLabel = computed(() => props.submitting ? '正在评分…' : '提�
       <Undo2 v-if="answerVisible" class="action-icon" :size="19" aria-hidden="true" /><Eye v-else class="action-icon" :size="19" aria-hidden="true" />
       <kbd>A</kbd><span class="action-label">{{ answerLabel }}</span>
     </button>
-    <button type="button" class="primary" :aria-label="submitLabel" :title="submitLabel" :disabled="submitting || busy" @click="$emit('submit')">
+    <button type="button" class="primary" :aria-label="submitLabel" :title="submitLabel" :disabled="submitting || busy || !online" @click="$emit('submit')">
       <LoaderCircle v-if="submitting" class="action-icon spin" :size="19" aria-hidden="true" /><Send v-else class="action-icon" :size="19" aria-hidden="true" />
       <kbd>Ctrl ↵</kbd><span class="action-label">{{ submitLabel }}</span>
     </button>

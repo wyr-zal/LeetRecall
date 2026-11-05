@@ -4,6 +4,13 @@ import { reviewApi } from '@/api/review'
 import { problemContentApi } from '@/api/problemContent'
 import { readActiveProblemId, writeActiveProblemId } from '@/utils/problemSelection'
 import { readStorage, writeStorage } from '@/utils/storage'
+import { online } from '@/offline/network'
+import {
+  cacheReviewDetail,
+  cacheReviewQueue,
+  readReviewDetail,
+  readReviewQueue,
+} from '@/offline/repo'
 import type {
   MasteryLevel,
   ProblemContent,
@@ -11,6 +18,7 @@ import type {
   ReviewProblemDetail,
   ReviewQueueItem,
   ReviewSubmitResult,
+  TodayReviewQueue,
 } from '@/types/problem'
 
 type ReviewDrafts = Record<number, Record<number, string>>
@@ -33,6 +41,8 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
   const submitting = ref(false)
   const error = ref('')
   const saveState = ref<'idle' | 'saved'>('idle')
+  /** 当前题目是否来自本地离线快照（网络请求失败时保留页面内容）。 */
+  const detailFromCache = ref(false)
 
   const editing = ref(false)
   const editContent = ref<ProblemContent | null>(null)
@@ -65,31 +75,44 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
     ? {}
     : recallDrafts.value[currentProblemId.value] ?? {})
 
+  async function applyQueue(
+    queue: TodayReviewQueue,
+    options?: { loadDetail?: boolean },
+  ): Promise<void> {
+    todayQueue.value = queue.items
+    if (options?.loadDetail === false) return
+    const activeProblemId = readActiveProblemId()
+    if (activeProblemId !== null && queue.items.some((item) => item.problemId === activeProblemId)) {
+      currentProblemId.value = activeProblemId
+    }
+    const currentExists = queue.items.some((item) => item.problemId === currentProblemId.value)
+    if (!currentExists) {
+      currentProblemId.value = queue.items.find((item) => !item.completed)?.problemId
+        ?? queue.items[0]?.problemId
+        ?? null
+    }
+    persistCurrent()
+    if (currentProblemId.value !== null) {
+      await loadProblem(currentProblemId.value)
+    } else {
+      currentProblem.value = null
+    }
+  }
+
   async function loadQueue(options?: { loadDetail?: boolean }): Promise<void> {
     loading.value = true
     error.value = ''
     try {
       const queue = await reviewApi.getTodayQueue()
-      todayQueue.value = queue.items
-      if (options?.loadDetail === false) return
-      const activeProblemId = readActiveProblemId()
-      if (activeProblemId !== null && queue.items.some((item) => item.problemId === activeProblemId)) {
-        currentProblemId.value = activeProblemId
-      }
-      const currentExists = queue.items.some((item) => item.problemId === currentProblemId.value)
-      if (!currentExists) {
-        currentProblemId.value = queue.items.find((item) => !item.completed)?.problemId
-          ?? queue.items[0]?.problemId
-          ?? null
-      }
-      persistCurrent()
-      if (currentProblemId.value !== null) {
-        await loadProblem(currentProblemId.value)
-      } else {
-        currentProblem.value = null
-      }
+      void cacheReviewQueue(queue).catch(() => undefined)
+      await applyQueue(queue, options)
     } catch (cause) {
-      error.value = cause instanceof Error ? cause.message : '加载失败，请重试'
+      const cached = await readReviewQueue<TodayReviewQueue>().catch(() => null)
+      if (cached && Array.isArray(cached.data.items)) {
+        await applyQueue(cached.data, options)
+      } else {
+        error.value = cause instanceof Error ? cause.message : '加载失败，请重试'
+      }
     } finally {
       loading.value = false
     }
@@ -99,6 +122,7 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
     if (loading.value) return
     try {
       const queue = await reviewApi.getTodayQueue()
+      void cacheReviewQueue(queue).catch(() => undefined)
       todayQueue.value = queue.items
       if (options?.reloadDetail === false) return
       const activeProblemId = readActiveProblemId()
@@ -112,7 +136,18 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
         currentProblemId.value = null
       }
     } catch (cause) {
-      error.value = cause instanceof Error ? cause.message : '加载失败，请重试'
+      const cached = await readReviewQueue<TodayReviewQueue>().catch(() => null)
+      if (!cached || !Array.isArray(cached.data.items)) {
+        error.value = cause instanceof Error ? cause.message : '加载失败，请重试'
+        return
+      }
+      todayQueue.value = cached.data.items
+      if (options?.reloadDetail === false) return
+      const target = cached.data.items.find((item) => item.problemId === currentProblemId.value)?.problemId
+        ?? cached.data.items[0]?.problemId
+      if (target !== undefined) {
+        await loadProblem(target, { keepPanelState: target === currentProblemId.value })
+      }
     }
   }
 
@@ -133,20 +168,45 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
     }
     detailLoading.value = true
     error.value = ''
+    detailFromCache.value = false
+    let usedCache = false
     try {
+      const cached = await readReviewDetail(problemId).catch(() => null)
+      if (cached && sequence === detailRequestSequence) {
+        currentProblem.value = cached
+        currentProblemId.value = problemId
+        detailFromCache.value = true
+        usedCache = true
+        if (!options?.keepPanelState) {
+          hintVisible.value = false
+          answerVisible.value = false
+          startTime.value = Date.now()
+        }
+        persistCurrent()
+        // 本地已有内容时先渲染，网络请求只做后台刷新。
+        detailLoading.value = false
+      }
       const detail = await reviewApi.getProblemDetail(problemId)
       if (sequence !== detailRequestSequence) return false
       currentProblem.value = detail
       currentProblemId.value = problemId
-      if (!options?.keepPanelState) {
+      detailFromCache.value = false
+      if (!options?.keepPanelState && !usedCache) {
         hintVisible.value = false
         answerVisible.value = false
         startTime.value = Date.now()
       }
       persistCurrent()
+      void cacheReviewDetail(detail).catch(() => undefined)
       return true
     } catch (cause) {
-      if (sequence === detailRequestSequence) error.value = cause instanceof Error ? cause.message : '加载失败，请重试'
+      if (sequence === detailRequestSequence) {
+        if (usedCache) {
+          detailFromCache.value = true
+          return true
+        }
+        error.value = cause instanceof Error ? cause.message : '加载失败，请重试'
+      }
       return false
     } finally {
       if (sequence === detailRequestSequence) detailLoading.value = false
@@ -160,6 +220,10 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
   async function enterEdit(): Promise<void> {
     const problemId = currentProblemId.value
     if (problemId === null || editing.value) return
+    if (!online.value) {
+      editError.value = '离线状态下无法编辑题目内容，请联网后重试。'
+      return
+    }
     editing.value = true
     editLoading.value = true
     editError.value = ''
@@ -183,6 +247,10 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
   async function saveEdit(payload: ProblemContentUpdate): Promise<boolean> {
     const problemId = currentProblemId.value
     if (problemId === null || editSaving.value) return false
+    if (!online.value) {
+      editError.value = '离线状态下无法保存题目内容，请联网后重试。'
+      return false
+    }
     editSaving.value = true
     editError.value = ''
     try {
@@ -239,6 +307,10 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
   async function submit(result: Exclude<MasteryLevel, 'NEW'>): Promise<ReviewSubmitResult | null> {
     const problem = currentProblem.value
     if (!problem || submitting.value || editing.value || detailLoading.value) return null
+    if (!online.value) {
+      error.value = '离线状态下无法提交评分，请联网后重试。'
+      return null
+    }
     if (beforeProblemChange && !await beforeProblemChange()) return null
     if (submitting.value || detailLoading.value || currentProblem.value !== problem) return null
     submitting.value = true
@@ -299,6 +371,7 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
     startTime,
     loading,
     detailLoading,
+    detailFromCache,
     submitting,
     error,
     saveState,

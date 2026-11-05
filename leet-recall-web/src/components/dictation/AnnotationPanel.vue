@@ -12,6 +12,7 @@ const props = defineProps<{
   draftAnchor?: CodeAnnotationAnchor | null
   canCreate?: boolean
   closable?: boolean
+  offline?: boolean
 }>()
 const emit = defineEmits<{
   cancelCreate: []
@@ -48,9 +49,10 @@ function saveNew(): void {
       </div>
       <button v-if="closable" class="close-button" type="button" aria-label="关闭批注面板" @click="emit('close')"><X :size="16" /></button>
     </header>
-    <p class="panel-description">选中答案代码后添加说明，默写时只展开自己需要的提示。</p>
+    <p class="panel-description">{{ offline ? '离线模式 · 批注只读，联网后可继续编辑。' : '选中答案代码后添加说明，默写时只展开自己需要的提示。' }}</p>
     <div v-if="loading" class="panel-state"><LoaderCircle class="spin" :size="16" />正在读取批注…</div>
     <div v-else-if="error" class="panel-state error">{{ error }}</div>
+    <div v-else-if="draftAnchor && offline" class="panel-state">离线模式无法新增批注，联网后重试。</div>
     <form v-else-if="draftAnchor" class="new-annotation" @submit.prevent="saveNew">
       <div class="new-anchor"><code>{{ draftAnchor.anchorText || '请在答案代码中选择一段代码' }}</code></div>
       <input v-model="draftLabel" maxlength="60" placeholder="批注标题（可选）" aria-label="批注标题" />
@@ -71,6 +73,7 @@ function saveNew(): void {
         :key="annotation.id"
         :annotation="annotation"
         :saving="saving && selectedAnnotationId === annotation.id"
+        :readonly="offline"
         @save="selectedAnnotationId = annotation.id; emit('save', annotation.id, $event)"
         @delete="selectedAnnotationId = annotation.id; emit('delete', annotation.id)"
         @select="emit('select', annotation)"

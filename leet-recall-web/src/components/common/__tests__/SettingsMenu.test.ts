@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 import SettingsMenu from '@/components/common/SettingsMenu.vue'
 import {
   DEFAULT_CODE_FONT_SIZE,
@@ -23,6 +24,7 @@ function sizeControls(wrapper: ReturnType<typeof mount>) {
 
 describe('SettingsMenu', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     setUiFontSize(DEFAULT_UI_FONT_SIZE)
     setCodeFontSize(DEFAULT_CODE_FONT_SIZE)
   })
@@ -114,7 +116,9 @@ describe('SettingsMenu', () => {
     setCodeFontSize(15)
     const wrapper = mount(SettingsMenu, { props: { open: true }, attachTo: document.body })
 
-    await wrapper.get('.danger').trigger('click')
+    // 离线资料区也有 .danger 按钮，按文字定位草稿清除入口。
+    const clearDraftButton = wrapper.findAll('button').find((button) => button.text() === '清除草稿')
+    await clearDraftButton!.trigger('click')
     await flushPromises()
     const confirm = Array.from(document.querySelectorAll('button'))
       .find((button) => button.textContent === '确认清除')

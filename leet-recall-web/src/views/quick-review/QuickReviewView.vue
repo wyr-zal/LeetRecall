@@ -20,6 +20,7 @@ import KeyboardShortcutPanel from '@/components/review/KeyboardShortcutPanel.vue
 import WorkspaceDrawer from '@/components/common/WorkspaceDrawer.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
 import { readWorkspaceLocation, workspaceTarget, type WorkspaceSection } from '@/utils/workspaceLocation'
+import { online } from '@/offline/network'
 import type { MasteryLevel, ProblemContentUpdate } from '@/types/problem'
 
 const DictationView = defineAsyncComponent(() => import('@/views/dictation/DictationView.vue'))
@@ -260,6 +261,10 @@ function recallAction(action: () => void): void {
 }
 
 async function enterEdit(): Promise<void> {
+  if (!online.value) {
+    notice.value = '离线模式下无法编辑题目内容，请联网后重试。'
+    return
+  }
   if (blocked.value || !await saveNote()) return
   await selectPanel('notes')
   await store.enterEdit()
@@ -298,7 +303,7 @@ useReviewShortcuts({
     <LoadingState v-if="locationPending && !locationReady" />
     <div v-show="locationReady" class="workspace-grid" :aria-busy="locationPending || detailLoading" :inert="blocked">
       <section class="statement-pane">
-        <header class="pane-heading"><span><FileText :size="16" /><span class="pane-heading-text">题目描述</span></span><button type="button" :disabled="!currentProblem || editing" aria-label="编辑题目" title="编辑题目" @click="enterEdit"><SquarePen :size="15" /><span class="pane-heading-text">编辑</span></button></header>
+        <header class="pane-heading"><span><FileText :size="16" /><span class="pane-heading-text">题目描述</span></span><button type="button" :disabled="!currentProblem || editing || !online" :aria-label="online ? '编辑题目' : '离线模式无法编辑题目'" :title="online ? '编辑题目' : '离线模式无法编辑题目'" @click="enterEdit"><SquarePen :size="15" /><span class="pane-heading-text">编辑</span></button></header>
         <div ref="statementBody" class="statement-body">
           <template v-if="currentProblem">
             <ProblemHeader :number="currentProblem.leetcodeNumber" :title="currentProblem.title" :difficulty="currentProblem.difficulty" :tags="currentProblem.tags" :updated-at="currentProblem.updatedAt" :external-imported="currentProblem.externalImported" />

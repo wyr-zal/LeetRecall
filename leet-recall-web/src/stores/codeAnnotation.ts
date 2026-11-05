@@ -7,6 +7,8 @@ import type {
   ResolvedCodeAnnotation,
 } from '@/types/annotation'
 import { resolveCodeAnnotations } from '@/utils/codeAnchor'
+import { online } from '@/offline/network'
+import { cacheAnnotations, readAnnotations } from '@/offline/repo'
 
 export const useCodeAnnotationStore = defineStore('codeAnnotation', () => {
   const problemId = ref<number | null>(null)
@@ -27,11 +29,20 @@ export const useCodeAnnotationStore = defineStore('codeAnnotation', () => {
     annotations.value = []
     error.value = ''
     loading.value = true
+    let usedCache = false
     try {
+      const cached = await readAnnotations(nextProblemId).catch(() => null)
+      if (cached && sequence === loadSequence && problemId.value === nextProblemId) {
+        annotations.value = cached
+        usedCache = true
+      }
       const loaded = await codeAnnotationApi.list(nextProblemId)
-      if (sequence === loadSequence && problemId.value === nextProblemId) annotations.value = loaded
-    } catch (cause) {
       if (sequence === loadSequence && problemId.value === nextProblemId) {
+        annotations.value = loaded
+        void cacheAnnotations(nextProblemId, loaded).catch(() => undefined)
+      }
+    } catch (cause) {
+      if (sequence === loadSequence && problemId.value === nextProblemId && !usedCache) {
         error.value = cause instanceof Error ? cause.message : '代码批注读取失败，请重试'
       }
     } finally {
@@ -45,6 +56,10 @@ export const useCodeAnnotationStore = defineStore('codeAnnotation', () => {
 
   async function create(input: CodeAnnotationInput): Promise<CodeAnnotation | null> {
     if (problemId.value === null) return null
+    if (!online.value) {
+      error.value = '离线模式下批注只读，联网后可继续编辑。'
+      return null
+    }
     saving.value = true
     error.value = ''
     try {
@@ -61,6 +76,10 @@ export const useCodeAnnotationStore = defineStore('codeAnnotation', () => {
 
   async function update(id: number, input: CodeAnnotationInput): Promise<CodeAnnotation | null> {
     if (problemId.value === null) return null
+    if (!online.value) {
+      error.value = '离线模式下批注只读，联网后可继续编辑。'
+      return null
+    }
     saving.value = true
     error.value = ''
     try {
@@ -77,6 +96,10 @@ export const useCodeAnnotationStore = defineStore('codeAnnotation', () => {
 
   async function remove(id: number): Promise<boolean> {
     if (problemId.value === null) return false
+    if (!online.value) {
+      error.value = '离线模式下批注只读，联网后可继续编辑。'
+      return false
+    }
     saving.value = true
     error.value = ''
     try {

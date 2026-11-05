@@ -7,6 +7,7 @@ import type { CodeAnnotationInput, ResolvedCodeAnnotation } from '@/types/annota
 const props = defineProps<{
   annotation: ResolvedCodeAnnotation
   saving?: boolean
+  readonly?: boolean
 }>()
 const emit = defineEmits<{
   save: [input: CodeAnnotationInput]
@@ -59,7 +60,7 @@ function save(): void {
         <span v-else>点击显示代码片段</span>
       </button>
 
-      <template v-if="editing">
+      <template v-if="editing && !readonly">
         <label>标题<input v-model="label" maxlength="60" placeholder="例如：循环边界" /></label>
         <label>批注内容<textarea v-model="contentMarkdown" maxlength="100000" rows="7" /></label>
         <div class="edit-actions">
@@ -71,7 +72,7 @@ function save(): void {
       </template>
       <template v-else>
         <MarkdownContent v-if="hasContent" :markdown="annotation.contentMarkdown" />
-        <div class="annotation-actions">
+        <div v-if="!readonly" class="annotation-actions">
           <button type="button" @click="beginEdit"><FilePenLine :size="13" />编辑</button>
           <button type="button" class="danger-button" @click="emit('delete')"><Trash2 :size="13" />删除</button>
         </div>

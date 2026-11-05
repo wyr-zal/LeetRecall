@@ -11,6 +11,8 @@ import {
 } from 'lucide-vue-next'
 import { problemNoteApi } from '@/api/problemNote'
 import MarkdownContent from '@/components/common/MarkdownContent.vue'
+import { online } from '@/offline/network'
+import { cacheNote, readNote } from '@/offline/repo'
 
 type NoteMode = 'edit' | 'preview'
 type SaveState = 'loading' | 'load-error' | 'idle' | 'dirty' | 'saving' | 'saved' | 'error'
@@ -25,7 +27,11 @@ const updatedAt = ref<string | null>(null)
 
 const hasContent = computed(() => markdown.value.trim().length > 0)
 const canSave = computed(() => saveState.value === 'dirty' || saveState.value === 'error')
+const offlineReadOnly = computed(() => !online.value)
 const statusText = computed(() => {
+  if (offlineReadOnly.value && saveState.value !== 'loading') {
+    return hasContent.value ? '离线只读' : '离线无笔记'
+  }
   switch (saveState.value) {
     case 'loading': return '正在读取笔记'
     case 'load-error': return '读取失败'
@@ -64,15 +70,27 @@ async function loadNote(problemId: number): Promise<void> {
   errorMessage.value = ''
   updatedAt.value = null
   saveState.value = 'loading'
+  let usedCache = false
   try {
+    const cached = await readNote(problemId).catch(() => null)
+    if (version !== loadVersion || problemId !== props.problemId) return
+    if (cached) {
+      replaceMarkdown(cached.markdown)
+      updatedAt.value = cached.updatedAt ?? null
+      mode.value = cached.markdown.trim() ? 'preview' : 'edit'
+      saveState.value = 'idle'
+      usedCache = true
+    }
     const note = await problemNoteApi.get(problemId)
     if (version !== loadVersion || problemId !== props.problemId) return
     replaceMarkdown(note.markdown)
     updatedAt.value = note.updatedAt ?? null
     mode.value = note.markdown.trim() ? 'preview' : 'edit'
     saveState.value = 'idle'
+    void cacheNote(problemId, note).catch(() => undefined)
   } catch (cause) {
     if (version !== loadVersion || problemId !== props.problemId) return
+    if (usedCache) return
     errorMessage.value = cause instanceof Error ? cause.message : '笔记读取失败，请重试'
     saveState.value = 'load-error'
   }
@@ -85,6 +103,13 @@ function enqueueSave(
   reflectState: boolean,
 ): Promise<void> {
   clearDebounce()
+  if (!online.value) {
+    if (reflectState && problemId === props.problemId) {
+      errorMessage.value = '离线模式下笔记只读，联网后可继续编辑。'
+      saveState.value = 'error'
+    }
+    return Promise.reject(new Error('offline'))
+  }
   if (reflectState && problemId === props.problemId) {
     saveState.value = 'saving'
     errorMessage.value = ''
@@ -112,12 +137,18 @@ function enqueueSave(
 
 function saveNow(): void {
   if (saveState.value === 'loading' || saveState.value === 'saving') return
+  if (!online.value) {
+    errorMessage.value = '离线模式下笔记只读，联网后可继续编辑。'
+    return
+  }
   void enqueueSave(props.problemId, markdown.value, editVersion, true)
 }
 
 // 工作台切题与导入前等待最后一次保存；失败返回 false，父层保留当前题和原文。
 async function flush(): Promise<boolean> {
   clearDebounce()
+  // 纯离线浏览没有待保存修改时直接放行；有未保存内容则保留当前题并提示。
+  if (!online.value) return !canSave.value
   try {
     await saveQueue.catch(() => undefined)
     while (canSave.value) {
@@ -208,7 +239,7 @@ onBeforeUnmount(() => {
         <button
           class="save-button"
           type="button"
-          :disabled="!canSave || saveState === 'saving'"
+          :disabled="!canSave || saveState === 'saving' || offlineReadOnly"
           @click="saveNow"
         >
           <LoaderCircle v-if="saveState === 'saving'" class="spin" :size="14" />
@@ -241,6 +272,7 @@ onBeforeUnmount(() => {
             v-model="markdown"
             maxlength="100000"
             spellcheck="false"
+            :readonly="offlineReadOnly"
             placeholder="## 解题思路\n\n- 核心关键点\n- 容易写错的边界\n\n```java\n// 关键代码\n```"
             @keydown.ctrl.s.prevent="saveNow"
             @keydown.meta.s.prevent="saveNow"
@@ -274,6 +306,7 @@ onBeforeUnmount(() => {
           <button v-if="saveState === 'error'" type="button" class="retry-button" @click="saveNow">
             重试
           </button>
+          <span v-if="offlineReadOnly" class="offline-hint">离线模式，笔记暂时只读</span>
           <span v-if="errorMessage" class="error-message">{{ errorMessage }}</span>
         </footer>
       </template>
@@ -471,6 +504,7 @@ textarea:focus { box-shadow: inset 0 0 0 1px var(--primary) !important; }
   background: rgba(255, 55, 95, 0.1);
 }
 .error-message { min-width: 0; overflow: hidden; font-size: calc(10px * var(--ui-font-ratio)); text-overflow: ellipsis; white-space: nowrap; }
+.offline-hint { color: var(--warning-strong); font-size: calc(10px * var(--ui-font-ratio)); white-space: nowrap; }
 .spin { animation: spin 800ms linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

@@ -1,5 +1,6 @@
 import axios, { AxiosError } from 'axios'
 import type { ApiResponse } from '@/types/api'
+import { markNetworkFailure, markNetworkSuccess } from '@/offline/network'
 
 export class ApiError extends Error {
   constructor(
@@ -20,8 +21,16 @@ export const http = axios.create({
 })
 
 http.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    markNetworkSuccess()
+    return response
+  },
   (error: AxiosError<ApiResponse<unknown>>) => {
+    if (error.response) {
+      markNetworkSuccess()
+    } else {
+      markNetworkFailure()
+    }
     const message = error.response?.data?.message || (error.code === 'ECONNABORTED'
       ? '请求超时，请重试'
       : '加载失败，请重试')

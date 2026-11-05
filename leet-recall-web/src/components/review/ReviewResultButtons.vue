@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { online } from '@/offline/network'
+
 defineProps<{ loading: boolean }>()
 const emit = defineEmits<{ select: [result: 'FORGOT' | 'FUZZY' | 'KNOWN'] }>()
 
@@ -16,8 +18,13 @@ function selectResult(event: Event): void {
 
 <template>
   <div class="result-buttons" aria-label="选择掌握状态">
-    <select aria-label="标记本题掌握程度" :disabled="loading" @change="selectResult">
-      <option value="" selected disabled>{{ loading ? '保存中…' : '选择掌握程度' }}</option>
+    <select
+      aria-label="标记本题掌握程度"
+      :disabled="loading || !online"
+      :title="online ? undefined : '离线状态下无法评分，请联网后重试'"
+      @change="selectResult"
+    >
+      <option value="" selected disabled>{{ !online ? '离线模式 · 评分需联网' : loading ? '保存中…' : '选择掌握程度' }}</option>
       <option value="FORGOT">1 · 不会</option>
       <option value="FUZZY">2 · 模糊</option>
       <option value="KNOWN">3 · 会</option>

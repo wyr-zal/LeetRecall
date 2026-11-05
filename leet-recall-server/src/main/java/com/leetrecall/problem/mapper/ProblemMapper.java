@@ -98,4 +98,15 @@ public interface ProblemMapper extends BaseMapper<Problem> {
             LIMIT 8
             """)
     List<ProblemSearchItemVO> search(@Param("keyword") String keyword);
+
+    /** 离线资料包需要一次取回全部启用题目，排序与今日复习队列一致。 */
+    @Select("""
+            SELECT id, leetcode_number, hot100_order, title, difficulty,
+                   description_markdown, core_idea, hint, key_code, full_code,
+                   status, created_at, updated_at
+            FROM problem
+            WHERE status = 1
+            ORDER BY COALESCE(hot100_order, 2147483647) ASC, leetcode_number ASC
+            """)
+    List<Problem> selectAllEnabledForOffline();
 }

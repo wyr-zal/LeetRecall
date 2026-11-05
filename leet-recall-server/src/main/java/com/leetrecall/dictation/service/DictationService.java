@@ -221,7 +221,7 @@ public class DictationService {
      * 导入契约要求占位符顶格独占一行、缩进保存在答案里；展示时把答案首行缩进
      * 补到占位符前，让空位落在代码规范的位置。评分按去空白比较，不受影响。
      */
-    private String indentPlaceholders(String templateCode, Map<String, String> answers) {
+    public static String indentPlaceholders(String templateCode, Map<String, String> answers) {
         if (templateCode == null || answers == null || answers.isEmpty()) return templateCode;
         String[] lines = templateCode.split("\n", -1);
         for (int index = 0; index < lines.length; index++) {
@@ -235,7 +235,7 @@ public class DictationService {
         return String.join("\n", lines);
     }
 
-    private String leadingWhitespace(String text) {
+    private static String leadingWhitespace(String text) {
         int end = 0;
         while (end < text.length() && (text.charAt(end) == ' ' || text.charAt(end) == '\t')) end++;
         return text.substring(0, end);

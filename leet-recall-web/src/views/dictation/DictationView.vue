@@ -6,6 +6,7 @@ import { dictationApi } from '@/api/dictation'
 import { useDictationStore } from '@/stores/dictation'
 import { useCodeAnnotationStore } from '@/stores/codeAnnotation'
 import { isEditableTarget } from '@/composables/useReviewShortcuts'
+import { online } from '@/offline/network'
 import DictationActions from '@/components/dictation/DictationActions.vue'
 import AnnotationPanel from '@/components/dictation/AnnotationPanel.vue'
 import DictationHistory from '@/components/dictation/DictationHistory.vue'
@@ -178,7 +179,7 @@ async function openRecord(recordId: number): Promise<void> {
       </div>
     </WorkspaceDrawer>
     <WorkspaceDrawer :open="active && drawerOpen && answerVisible && !mobile" title="代码批注" compact @close="drawerOpen = false">
-      <AnnotationPanel :annotations="visibleAnnotations" :loading="annotationLoading" :saving="annotationSaving" :error="annotationError" :draft-anchor="draftAnnotationAnchor" :can-create="answerVisible" @cancel-create="draftAnnotationAnchor = null" @save-new="saveNewAnnotation" @save="saveAnnotation" @delete="deleteAnnotationId = $event" @select="selectAnnotation" />
+      <AnnotationPanel :annotations="visibleAnnotations" :loading="annotationLoading" :saving="annotationSaving" :error="annotationError" :draft-anchor="draftAnnotationAnchor" :can-create="answerVisible" :offline="!online" @cancel-create="draftAnnotationAnchor = null" @save-new="saveNewAnnotation" @save="saveAnnotation" @delete="deleteAnnotationId = $event" @select="selectAnnotation" />
     </WorkspaceDrawer>
     <ConfirmDialog :open="active && deleteAnnotationId !== null" title="删除代码批注" description="确定删除这条代码批注吗？删除后无法恢复。" confirm-label="删除批注" @confirm="confirmDeleteAnnotation" @cancel="deleteAnnotationId = null" />
     <ConfirmDialog :open="active && resetOpen" title="重置当前默写" description="确定清空当前填写内容吗？此操作不会删除已保存的历史记录。" confirm-label="清空内容" @confirm="confirmReset" @cancel="resetOpen = false" />
