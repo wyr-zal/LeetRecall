@@ -1,5 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { problemImportApi } from '@/api/problemImport'
+import { useOfflineStore } from '@/stores/offline'
 import ProblemImportView from '@/views/problem-import/ProblemImportView.vue'
 import type { ExternalImportTaskPack, Hot100Manifest } from '@/types/import'
 
@@ -85,6 +87,8 @@ async function chooseFile(wrapper: ReturnType<typeof mount>, file: File): Promis
 describe('ProblemImportView', () => {
   beforeEach(() => {
     localStorage.clear()
+    setActivePinia(createPinia())
+    vi.spyOn(useOfflineStore(), 'refreshImportedProblem').mockResolvedValue()
     vi.spyOn(problemImportApi, 'getHot100Manifest').mockResolvedValue(manifest)
     vi.spyOn(problemImportApi, 'getExternalImportTask').mockResolvedValue(task)
   })
@@ -119,12 +123,60 @@ describe('ProblemImportView', () => {
     await wrapper.get('.confirm').trigger('click')
     await flushPromises()
     expect(confirm).not.toHaveBeenCalled()
+    expect(useOfflineStore().refreshImportedProblem).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('笔记保存失败')
     guard.mockResolvedValue(true)
     await wrapper.get('.confirm').trigger('click')
     await flushPromises()
     expect(confirm).toHaveBeenCalledWith(1, false)
+    expect(useOfflineStore().refreshImportedProblem).toHaveBeenCalledWith(1)
     expect(wrapper.emitted('imported')).toEqual([[1]])
+    wrapper.unmount()
+  })
+
+  it('数据库成功但缓存补回失败仍显示已导入，重试只更新缓存', async () => {
+    const readyDraft = { ...invalidDraft, status: 'READY' as const, validationErrors: [], compilePassed: true,
+      impact: { ...invalidDraft.impact, overwriteExisting: true } }
+    vi.spyOn(problemImportApi, 'createExternalDraft').mockResolvedValue(readyDraft)
+    const confirm = vi.spyOn(problemImportApi, 'confirmExternalDraft').mockResolvedValue({ ...readyDraft, status: 'IMPORTED', publishedProblemId: 1 })
+    const refresh = vi.mocked(useOfflineStore().refreshImportedProblem).mockRejectedValueOnce(new Error('下载失败'))
+    const wrapper = mount(ProblemImportView, { props: { initialNumber: 1 }, global: { stubs: { MarkdownContent: true, ConfirmDialog: true } } })
+    await flushPromises()
+    await wrapper.get('textarea.json-editor').setValue('{"leetcodeNumber":1}')
+    await wrapper.get('.section-heading .primary').trigger('click')
+    await flushPromises()
+    await wrapper.get('.confirm').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('题目已导入，但离线资料未更新')
+    expect(wrapper.find('.feedback.success').exists()).toBe(true)
+    expect(wrapper.emitted('imported')).toEqual([[1]])
+    await wrapper.get('[data-test="retry-import-cache"]').trigger('click')
+    await flushPromises()
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(refresh).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-test="retry-import-cache"]').exists()).toBe(false)
+    expect(wrapper.find('.feedback.error').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('确认请求返回前不更新缓存，确认失败也不更新', async () => {
+    const readyDraft = { ...invalidDraft, status: 'READY' as const, validationErrors: [], compilePassed: true,
+      impact: { ...invalidDraft.impact, overwriteExisting: true } }
+    vi.spyOn(problemImportApi, 'createExternalDraft').mockResolvedValue(readyDraft)
+    let rejectConfirm!: (reason: Error) => void
+    vi.spyOn(problemImportApi, 'confirmExternalDraft').mockReturnValue(new Promise((_, reject) => { rejectConfirm = reject }))
+    const wrapper = mount(ProblemImportView, { props: { initialNumber: 1 }, global: { stubs: { MarkdownContent: true, ConfirmDialog: true } } })
+    await flushPromises()
+    await wrapper.get('textarea.json-editor').setValue('{"leetcodeNumber":1}')
+    await wrapper.get('.section-heading .primary').trigger('click')
+    await flushPromises()
+    await wrapper.get('.confirm').trigger('click')
+    await flushPromises()
+    expect(useOfflineStore().refreshImportedProblem).not.toHaveBeenCalled()
+    rejectConfirm(new Error('导入失败'))
+    await flushPromises()
+    expect(useOfflineStore().refreshImportedProblem).not.toHaveBeenCalled()
+    expect(wrapper.emitted('imported')).toBeUndefined()
     wrapper.unmount()
   })
 

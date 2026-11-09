@@ -12,6 +12,7 @@ import {
 import { problemNoteApi } from '@/api/problemNote'
 import MarkdownContent from '@/components/common/MarkdownContent.vue'
 import { online } from '@/offline/network'
+import { getProblemCacheVersion, isProblemCacheVersionCurrent } from '@/offline/db'
 import { cacheNote, readNote } from '@/offline/repo'
 
 type NoteMode = 'edit' | 'preview'
@@ -64,6 +65,7 @@ function replaceMarkdown(value: string): void {
 
 async function loadNote(problemId: number): Promise<void> {
   const version = ++loadVersion
+  const cacheVersion = await getProblemCacheVersion(problemId)
   clearDebounce()
   editVersion = 0
   replaceMarkdown('')
@@ -73,7 +75,7 @@ async function loadNote(problemId: number): Promise<void> {
   let usedCache = false
   try {
     const cached = await readNote(problemId).catch(() => null)
-    if (version !== loadVersion || problemId !== props.problemId) return
+    if (version !== loadVersion || problemId !== props.problemId || !await isProblemCacheVersionCurrent(problemId, cacheVersion)) return
     if (cached) {
       replaceMarkdown(cached.markdown)
       updatedAt.value = cached.updatedAt ?? null
@@ -82,14 +84,14 @@ async function loadNote(problemId: number): Promise<void> {
       usedCache = true
     }
     const note = await problemNoteApi.get(problemId)
-    if (version !== loadVersion || problemId !== props.problemId) return
+    if (version !== loadVersion || problemId !== props.problemId || !await isProblemCacheVersionCurrent(problemId, cacheVersion)) return
     replaceMarkdown(note.markdown)
     updatedAt.value = note.updatedAt ?? null
     mode.value = note.markdown.trim() ? 'preview' : 'edit'
     saveState.value = 'idle'
-    void cacheNote(problemId, note).catch(() => undefined)
+    void cacheNote(problemId, note, cacheVersion).catch(() => undefined)
   } catch (cause) {
-    if (version !== loadVersion || problemId !== props.problemId) return
+    if (version !== loadVersion || problemId !== props.problemId || !await isProblemCacheVersionCurrent(problemId, cacheVersion)) return
     if (usedCache) return
     errorMessage.value = cause instanceof Error ? cause.message : '笔记读取失败，请重试'
     saveState.value = 'load-error'

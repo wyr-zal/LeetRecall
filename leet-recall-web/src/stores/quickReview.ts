@@ -5,6 +5,7 @@ import { problemContentApi } from '@/api/problemContent'
 import { readActiveProblemId, writeActiveProblemId } from '@/utils/problemSelection'
 import { readStorage, writeStorage } from '@/utils/storage'
 import { online } from '@/offline/network'
+import { getProblemCacheVersion, isProblemCacheVersionCurrent } from '@/offline/db'
 import {
   cacheReviewDetail,
   cacheReviewQueue,
@@ -154,6 +155,7 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
   /** 同题刷新保留内容容器；只有数据成功返回后才切换当前题。 */
   async function loadProblem(problemId: number, options?: { keepPanelState?: boolean }): Promise<boolean> {
     const sequence = ++detailRequestSequence
+    const cacheVersion = await getProblemCacheVersion(problemId)
     if (problemId !== currentProblemId.value) {
       if (editing.value) {
         error.value = '请先保存或取消题目编辑，再切换题目。'
@@ -172,6 +174,7 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
     let usedCache = false
     try {
       const cached = await readReviewDetail(problemId).catch(() => null)
+      if (!await isProblemCacheVersionCurrent(problemId, cacheVersion)) return false
       if (cached && sequence === detailRequestSequence) {
         currentProblem.value = cached
         currentProblemId.value = problemId
@@ -187,7 +190,7 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
         detailLoading.value = false
       }
       const detail = await reviewApi.getProblemDetail(problemId)
-      if (sequence !== detailRequestSequence) return false
+      if (sequence !== detailRequestSequence || !await isProblemCacheVersionCurrent(problemId, cacheVersion)) return false
       currentProblem.value = detail
       currentProblemId.value = problemId
       detailFromCache.value = false
@@ -197,10 +200,10 @@ export const useQuickReviewStore = defineStore('quick-review', () => {
         startTime.value = Date.now()
       }
       persistCurrent()
-      void cacheReviewDetail(detail).catch(() => undefined)
+      void cacheReviewDetail(detail, cacheVersion).catch(() => undefined)
       return true
     } catch (cause) {
-      if (sequence === detailRequestSequence) {
+      if (sequence === detailRequestSequence && await isProblemCacheVersionCurrent(problemId, cacheVersion)) {
         if (usedCache) {
           detailFromCache.value = true
           return true

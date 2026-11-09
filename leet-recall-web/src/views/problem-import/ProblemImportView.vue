@@ -6,6 +6,7 @@ import { problemImportApi } from '@/api/problemImport'
 import MarkdownContent from '@/components/common/MarkdownContent.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { online } from '@/offline/network'
+import { useOfflineStore } from '@/stores/offline'
 import importSpecMarkdown from '@/content/external-import-spec.md?raw'
 import type { Difficulty } from '@/types/problem'
 import type { ExternalImportDraft, ExternalImportTaskPack, Hot100Manifest, Hot100Problem, ProblemCreated } from '@/types/import'
@@ -17,6 +18,8 @@ const props = withDefaults(defineProps<{
   beforeImport?: () => Promise<boolean>
 }>(), { active: true, embedded: false, initialNumber: undefined, beforeImport: undefined })
 const emit = defineEmits<{ imported: [problemId: number]; busy: [value: boolean] }>()
+const offlineStore = useOfflineStore()
+const cacheRefreshProblemId = ref<number | null>(null)
 const importSpec = importSpecMarkdown
 const browserDialog = ref<HTMLElement | null>(null)
 
@@ -131,6 +134,7 @@ function resetDraftState(): void {
 function clearValidatedResult(): void {
   draft.value = null
   created.value = null
+  cacheRefreshProblemId.value = null
   overwriteDialogOpen.value = false
 }
 
@@ -323,9 +327,35 @@ async function runImport(): Promise<void> {
     const result = await problemImportApi.confirmExternalDraft(draftId, overwrite)
     draft.value = result
     created.value = result.publishedProblemId ? { problemId: result.publishedProblemId, leetcodeNumber: result.leetcodeNumber, title: task.value?.title ?? '' } : null
-    if (result.publishedProblemId) emit('imported', result.publishedProblemId)
+    if (result.publishedProblemId) {
+      await refreshImportedCache(result.publishedProblemId)
+      emit('imported', result.publishedProblemId)
+    }
   } catch (cause) { error.value = cause instanceof Error ? cause.message : '确认导入失败' }
   finally { confirming.value = false }
+}
+
+async function refreshImportedCache(problemId: number): Promise<void> {
+  try {
+    await offlineStore.refreshImportedProblem(problemId)
+    cacheRefreshProblemId.value = null
+  } catch {
+    cacheRefreshProblemId.value = problemId
+    error.value = '题目已导入，但离线资料未更新。请重新更新离线资料。'
+  }
+}
+
+async function retryImportedCache(): Promise<void> {
+  const problemId = cacheRefreshProblemId.value
+  if (problemId === null || confirming.value) return
+  confirming.value = true
+  error.value = ''
+  try {
+    await refreshImportedCache(problemId)
+    emit('imported', problemId)
+  } finally {
+    confirming.value = false
+  }
 }
 
 async function copyDocument(): Promise<void> {
@@ -444,6 +474,7 @@ function downloadJsonExample(): void {
     </section>
 
     <div v-if="error" class="feedback error" role="alert">{{ error }}</div>
+    <button v-if="cacheRefreshProblemId !== null" class="secondary" type="button" :disabled="confirming" data-test="retry-import-cache" @click="retryImportedCache">重新更新离线资料</button>
     <div v-if="created" class="feedback success" role="status"><CheckCircle2 :size="18" />已导入 {{ created.leetcodeNumber }} · {{ created.title }}；历史进度和记录已保留。</div>
     <details class="format-help app-card">
       <summary><FileText :size="18" /><span><strong>外部 AI 生成与导入规范</strong><small>点击展开字段定义、建议格式与必要校验</small></span><ChevronDown :size="18" aria-hidden="true" /></summary>

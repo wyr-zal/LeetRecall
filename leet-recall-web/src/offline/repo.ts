@@ -6,6 +6,7 @@ import type {
 } from '@/types/dictation'
 import type { OfflineProblem } from '@/types/offline'
 import type { ProblemNote, ReviewProblemDetail } from '@/types/problem'
+import type { CacheVersion } from '@/offline/db'
 import {
   PENDING_ANSWER_VIEW_KEY,
   readProblem,
@@ -99,7 +100,7 @@ export async function readAnnotations(problemId: number): Promise<CodeAnnotation
   return problem ? toAnnotations(problem) : null
 }
 
-export async function cacheReviewDetail(detail: ReviewProblemDetail): Promise<void> {
+export async function cacheReviewDetail(detail: ReviewProblemDetail, version?: CacheVersion): Promise<void> {
   await updateProblem(detail.problemId, () => ({
     title: detail.title,
     difficulty: detail.difficulty,
@@ -111,10 +112,10 @@ export async function cacheReviewDetail(detail: ReviewProblemDetail): Promise<vo
     mistakes: detail.mistakes,
     keyCode: detail.keyCode,
     updatedAt: detail.updatedAt ?? null,
-  }))
+  }), version)
 }
 
-export async function cacheDictationDetail(detail: DictationProblemDetail): Promise<void> {
+export async function cacheDictationDetail(detail: DictationProblemDetail, version?: CacheVersion): Promise<void> {
   await updateProblem(detail.problemId, () => ({
     title: detail.title,
     difficulty: detail.difficulty,
@@ -125,25 +126,25 @@ export async function cacheDictationDetail(detail: DictationProblemDetail): Prom
     templateCode: detail.templateCode,
     keywords: detail.keywords,
     mistakes: detail.mistakes,
-  }))
+  }), version)
 }
 
-export async function cacheDictationAnswer(problemId: number, answer: DictationAnswer): Promise<void> {
+export async function cacheDictationAnswer(problemId: number, answer: DictationAnswer, version?: CacheVersion): Promise<void> {
   await updateProblem(problemId, () => ({
     fullCode: answer.fullCode,
     dictationAnswers: answer.answers,
-  }))
+  }), version)
 }
 
-export async function cacheNote(problemId: number, note: ProblemNote): Promise<void> {
+export async function cacheNote(problemId: number, note: ProblemNote, version?: CacheVersion): Promise<void> {
   await updateProblem(problemId, () => ({
     noteMarkdown: note.markdown,
     noteUpdatedAt: note.updatedAt ?? null,
-  }))
+  }), version)
 }
 
-export async function cacheAnnotations(problemId: number, annotations: CodeAnnotation[]): Promise<void> {
-  await updateProblem(problemId, () => ({ annotations }))
+export async function cacheAnnotations(problemId: number, annotations: CodeAnnotation[], version?: CacheVersion): Promise<void> {
+  await updateProblem(problemId, () => ({ annotations }), version)
 }
 
 export async function cacheReviewQueue<T>(data: T): Promise<void> {

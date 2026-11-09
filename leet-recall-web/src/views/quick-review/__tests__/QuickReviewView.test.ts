@@ -7,6 +7,7 @@ import { reviewApi } from '@/api/review'
 import { dictationApi } from '@/api/dictation'
 import { codeAnnotationApi } from '@/api/codeAnnotation'
 import { problemNoteApi } from '@/api/problemNote'
+import { OFFLINE_PROBLEM_CACHE_CHANGED_EVENT } from '@/offline/db'
 import { useQuickReviewStore } from '@/stores/quickReview'
 import QuickReviewView from '@/views/quick-review/QuickReviewView.vue'
 
@@ -87,6 +88,27 @@ describe('统一学习工作台', () => {
     expect(wrapper.get('#panel-notes textarea').element).toBe(note)
     expect(reviewApi.getTodayQueue).toHaveBeenCalledTimes(1)
     expect(reviewApi.getProblemDetail).toHaveBeenCalledTimes(1)
+  })
+
+  it('收到整包缓存变更通知后刷新当前题、笔记和默写模板', async () => {
+    const { wrapper } = await mountView()
+    wrappers.push(wrapper)
+    await wrapper.get('#tab-dictation').trigger('click')
+    await flushPromises()
+    const revision = Number(wrapper.getComponent(DictationStub).props('revision') ?? 0)
+    const detailCalls = vi.mocked(reviewApi.getProblemDetail).mock.calls.length
+    const noteCalls = vi.mocked(problemNoteApi.get).mock.calls.length
+
+    const event = new CustomEvent(OFFLINE_PROBLEM_CACHE_CHANGED_EVENT, {
+      detail: { all: true, phase: 'committed', pageEpoch: 'page-version-1' },
+    })
+    window.dispatchEvent(event)
+    window.dispatchEvent(event)
+    await flushPromises()
+
+    expect(reviewApi.getProblemDetail).toHaveBeenCalledTimes(detailCalls + 1)
+    expect(problemNoteApi.get).toHaveBeenCalledTimes(noteCalls + 1)
+    expect(wrapper.getComponent(DictationStub).props('revision')).toBe(revision + 1)
   })
 
   it('默写只在首次打开时创建，隐藏后再打开保留输入与实例', async () => {

@@ -1,8 +1,15 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
+  OFFLINE_PROBLEM_CACHE_CHANGED_EVENT,
+  cacheImportedProblem,
   clearOfflineData,
+  getPackCacheVersion,
+  getProblemCacheVersion,
+  invalidateProblem,
+  isPackCacheVersionCurrent,
   readMeta,
+  readProblem,
   replacePack,
   requestStoragePersistence,
   storageEstimate,
@@ -34,6 +41,7 @@ export const useOfflineStore = defineStore('offline', () => {
   let installPrompt: InstallPromptEvent | null = null
   let initialized = false
   let syncTask: Promise<void> | null = null
+  const handledCacheMetaEvents = new Set<string>()
 
   const offline = computed(() => !online.value)
   const hasPack = computed(() => meta.value !== null && meta.value.problemCount > 0)
@@ -79,6 +87,19 @@ export const useOfflineStore = defineStore('offline', () => {
       })
       // 网络恢复时补一次检查；30 分钟内已检查过则自动跳过。
       window.addEventListener('online', () => { void sync({ automatic: true }) })
+      window.addEventListener(OFFLINE_PROBLEM_CACHE_CHANGED_EVENT, (event) => {
+        const detail = (event as CustomEvent<{
+          problemId?: number
+          all?: boolean
+          phase?: string
+          pageEpoch?: string
+          pageProblemToken?: string
+        }>).detail
+        const eventKey = `${detail?.all ? 'all' : detail?.problemId}:${detail?.phase ?? ''}:${detail?.pageEpoch ?? ''}:${detail?.pageProblemToken ?? ''}`
+        if (handledCacheMetaEvents.has(eventKey)) return
+        handledCacheMetaEvents.add(eventKey)
+        void readMeta().then((value) => { meta.value = value }).catch(() => undefined)
+      })
       // 首次联网且尚未保存资料时立即下载，其余情况走空闲时的增量检查。
       const run = () => { void sync({ automatic: true }) }
       if ('requestIdleCallback' in window) window.requestIdleCallback(run, { timeout: 4000 })
@@ -86,8 +107,11 @@ export const useOfflineStore = defineStore('offline', () => {
     }
   }
 
-  async function sync(options?: { force?: boolean; automatic?: boolean }): Promise<void> {
-    if (syncTask) return syncTask
+  async function sync(options?: { force?: boolean; automatic?: boolean; problemId?: number }): Promise<void> {
+    if (syncTask) {
+      await syncTask
+      if (options?.problemId === undefined) return
+    }
     if (!available.value) {
       error.value = '当前浏览器不支持离线存储'
       return
@@ -98,19 +122,24 @@ export const useOfflineStore = defineStore('offline', () => {
     if (!options?.force && lastCheckedAt && Date.now() - lastCheckedAt < AUTO_CHECK_INTERVAL) return
 
     syncTask = (async () => {
+      const problemId = options?.problemId
       syncing.value = true
       error.value = ''
       const controller = new AbortController()
       const timeout = window.setTimeout(() => controller.abort(), 30_000)
       try {
+        const packVersion = await getPackCacheVersion()
+        const problemVersion = problemId === undefined ? null : await getProblemCacheVersion(problemId)
         const response = await fetch('/api/offline/pack', {
-          headers: meta.value?.etag ? { 'If-None-Match': meta.value.etag } : undefined,
+          headers: problemId === undefined && meta.value?.etag ? { 'If-None-Match': meta.value.etag } : undefined,
           cache: 'no-cache',
           signal: controller.signal,
         })
         // 拿到 HTTP 响应即说明网络可达；断网导致的 fetch 失败由下方 catch 处理。
         markNetworkSuccess()
         if (response.status === 304) {
+          if (problemId !== undefined) throw new Error('未取得导入题目的新资料，请重试')
+          if (!await isPackCacheVersionCurrent(packVersion)) return
           if (meta.value) {
             meta.value = { ...meta.value, lastCheckedAt: Date.now() }
           }
@@ -132,9 +161,28 @@ export const useOfflineStore = defineStore('offline', () => {
           problemCount: pack.problems.length,
           lastCheckedAt: Date.now(),
         }
-        // 同一个事务内清空并写入；失败会回滚，旧资料继续可用。
-        await replacePack(pack, nextMeta)
-        meta.value = nextMeta
+        if (problemId === undefined) {
+          // 导入前开始的整包下载不允许把已失效的旧题目写回来。
+          if (!await replacePack(pack, nextMeta, packVersion)) {
+            if (!packVersion.readable) throw new Error('无法校验离线资料版本，请重试更新。')
+            return
+          }
+          meta.value = nextMeta
+        } else {
+          const problem = pack.problems.find((item) => item.problemId === problemId)
+          if (!problem) throw new Error('离线资料包中缺少导入题目，请重试')
+          const textFields = ['title', 'descriptionMarkdown', 'hint', 'coreIdea', 'keyCode', 'fullCode', 'templateCode', 'noteMarkdown'] as const
+          const listFields = ['tags', 'recallQuestions', 'mistakes', 'keywords', 'annotations'] as const
+          if (!textFields.every((key) => typeof problem[key] === 'string')
+            || !listFields.every((key) => Array.isArray(problem[key]))
+            || !problem.dictationAnswers || typeof problem.dictationAnswers !== 'object'
+            || Array.isArray(problem.dictationAnswers)) {
+            throw new Error('导入题目的离线资料不完整，请重试')
+          }
+          const saved = problemVersion && await cacheImportedProblem(problem, problemVersion)
+          if (!saved && !await readProblem(problemId)) throw new Error('无法确认该题离线资料已更新，请重试。')
+          meta.value = await readMeta()
+        }
         await ensurePersistence()
         await refreshStorageState()
       } catch (cause) {
@@ -150,6 +198,9 @@ export const useOfflineStore = defineStore('offline', () => {
         } else {
           error.value = cause instanceof Error ? cause.message : '离线资料下载失败，旧资料已保留。'
         }
+        if (problemId !== undefined) {
+          error.value = '该题离线资料暂不可用，其他题缓存仍保留。请重试更新。'
+        }
       } finally {
         window.clearTimeout(timeout)
         syncing.value = false
@@ -157,6 +208,23 @@ export const useOfflineStore = defineStore('offline', () => {
       }
     })()
     return syncTask
+  }
+
+  /** 由确认导入成功后的回调调用；整包只用于取完整字段，落盘仅涉及导入题。 */
+  async function refreshImportedProblem(problemId: number): Promise<void> {
+    if (!available.value) return
+    const pendingDownload = syncTask
+    await invalidateProblem(problemId)
+    meta.value = await readMeta()
+    // 尚未保存过题包时没有旧缓存需要补回，首次自动下载仍负责建立完整题库。
+    if (!meta.value) {
+      if (!pendingDownload) return
+      await pendingDownload
+      await sync({ force: true })
+    } else {
+      await sync({ force: true, problemId })
+    }
+    if (error.value) throw new Error(error.value)
   }
 
   /** 仅清除本应用写入的离线资料；不触碰服务端记录，也不清理应用外壳缓存。 */
@@ -192,6 +260,7 @@ export const useOfflineStore = defineStore('offline', () => {
     downloadedAt,
     initialize,
     sync,
+    refreshImportedProblem,
     clear,
     setAutoUpdate,
     install,

@@ -42,9 +42,13 @@ describe('quickReviewStore', () => {
     const store = useQuickReviewStore()
     await store.loadQueue()
     let finishOld!: (value: ReviewProblemDetail) => void
-    vi.mocked(reviewApi.getProblemDetail).mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve }))
+    vi.mocked(reviewApi.getProblemDetail).mockImplementation(async (id) => {
+      if (id === 8) return await new Promise(resolve => { finishOld = resolve })
+      return detail(id)
+    })
     const oldRequest = store.loadProblem(8)
     expect(store.currentProblemId).toBe(1)
+    await vi.waitFor(() => expect(reviewApi.getProblemDetail).toHaveBeenLastCalledWith(8))
     await store.loadProblem(1)
     finishOld(detail(8))
     await oldRequest

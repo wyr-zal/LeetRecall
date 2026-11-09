@@ -20,6 +20,7 @@ import KeyboardShortcutPanel from '@/components/review/KeyboardShortcutPanel.vue
 import WorkspaceDrawer from '@/components/common/WorkspaceDrawer.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
 import { readWorkspaceLocation, workspaceTarget, type WorkspaceSection } from '@/utils/workspaceLocation'
+import { OFFLINE_PROBLEM_CACHE_CHANGED_EVENT } from '@/offline/db'
 import { online } from '@/offline/network'
 import type { MasteryLevel, ProblemContentUpdate } from '@/types/problem'
 
@@ -67,6 +68,9 @@ const dictationPanel = ref<{ hasDialog: boolean } | null>(null)
 const blocked = computed(() => locationPending.value || loading.value || detailLoading.value || submitting.value || dictationStore.submitting || importing.value)
 const notesRevision = ref(0)
 const templateRevision = ref(0)
+const handledCacheRefreshes = new Map<string, string>()
+const activeCacheRefreshes = new Map<number, number>()
+let cacheRefreshSequence = 0
 
 watch(activePanel, (panel) => {
   if (panel === 'dictation') dictationVisited.value = true
@@ -179,6 +183,7 @@ function disconnectNavigation(): void {
 }
 onMounted(() => {
   mobileQuery?.addEventListener('change', syncWidth)
+  window.addEventListener(OFFLINE_PROBLEM_CACHE_CHANGED_EVENT, refreshInvalidatedProblem)
   connectNavigation()
   restoreLocation()
 })
@@ -186,6 +191,7 @@ onActivated(() => { active.value = true; connectNavigation() })
 onDeactivated(() => { active.value = false; disconnectNavigation() })
 onBeforeUnmount(() => {
   mobileQuery?.removeEventListener('change', syncWidth)
+  window.removeEventListener(OFFLINE_PROBLEM_CACHE_CHANGED_EVENT, refreshInvalidatedProblem)
   disconnectNavigation()
 })
 
@@ -245,7 +251,41 @@ async function imported(problemId: number): Promise<void> {
   await store.refreshQueue({ reloadDetail: false })
   if (problemId !== currentProblemId.value) return
   if (!await saveNote()) return
-  await store.loadProblem(problemId, { keepPanelState: true })
+  if (!await store.loadProblem(problemId, { keepPanelState: true })) {
+    notice.value = '题目已导入，但当前页面未能刷新；请重试重新加载。'
+    return
+  }
+  notesRevision.value += 1
+  templateRevision.value += 1
+}
+
+async function refreshInvalidatedProblem(event: Event): Promise<void> {
+  const detail = (event as CustomEvent<{ problemId?: number; all?: boolean; phase?: string; pageEpoch?: string; pageProblemToken?: string }>).detail
+  const problemId = detail?.problemId ?? (detail?.all ? currentProblemId.value ?? undefined : undefined)
+  if (problemId === undefined || problemId !== currentProblemId.value) return
+  const phase = detail?.phase ?? 'change'
+  const pageVersion = `${detail?.pageEpoch ?? ''}:${detail?.pageProblemToken ?? ''}`
+  const refreshKey = `${problemId}:${phase}`
+  if (handledCacheRefreshes.get(refreshKey) === pageVersion) return
+  handledCacheRefreshes.set(refreshKey, pageVersion)
+  const refreshSequence = ++cacheRefreshSequence
+  activeCacheRefreshes.set(problemId, refreshSequence)
+  if (phase === 'invalidated') {
+    store.cancelProblemLoad()
+    return
+  }
+  if (!await saveNote()) {
+    if (activeCacheRefreshes.get(problemId) === refreshSequence) handledCacheRefreshes.delete(refreshKey)
+    return
+  }
+  if (activeCacheRefreshes.get(problemId) !== refreshSequence || problemId !== currentProblemId.value) return
+  notice.value = ''
+  const loaded = await store.loadProblem(problemId, { keepPanelState: true })
+  if (activeCacheRefreshes.get(problemId) !== refreshSequence || problemId !== currentProblemId.value) return
+  if (!loaded) {
+    notice.value = '此题缓存已在另一标签页变更，但当前页未能刷新；请联网后重新加载。'
+    return
+  }
   notesRevision.value += 1
   templateRevision.value += 1
 }
@@ -291,7 +331,7 @@ useReviewShortcuts({
   <main class="workspace" :class="`mobile-${mobilePanel}`">
     <div v-if="locationError || notice || error" class="workspace-error" role="alert">
       <span>{{ locationError || notice || error }}</span>
-      <button v-if="locationError || error" type="button" @click="restoreLocation(true)">重试</button>
+      <button v-if="locationError || notice || error" type="button" @click="restoreLocation(true)">重试</button>
       <RouterLink v-if="locationError" to="/problems">返回题目</RouterLink>
     </div>
     <Teleport to="#workspace-tabs-slot" defer>

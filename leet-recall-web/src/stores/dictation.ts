@@ -4,6 +4,7 @@ import { dictationApi } from '@/api/dictation'
 import { readActiveProblemId, writeActiveProblemId } from '@/utils/problemSelection'
 import { readStorage, writeStorage } from '@/utils/storage'
 import { online } from '@/offline/network'
+import { getProblemCacheVersion, isProblemCacheVersionCurrent } from '@/offline/db'
 import {
   addPendingAnswerView,
   cacheDictationAnswer,
@@ -154,6 +155,7 @@ export const useDictationStore = defineStore('dictation', () => {
 
   async function loadProblem(problemId: number): Promise<void> {
     const requestSequence = ++detailRequestSequence
+    const cacheVersion = await getProblemCacheVersion(problemId)
     cancelAnswerRequest()
     detailLoading.value = true
     error.value = ''
@@ -161,6 +163,7 @@ export const useDictationStore = defineStore('dictation', () => {
     let usedCache = false
     try {
       const cached = await readDictationDetail(problemId).catch(() => null)
+      if (!await isProblemCacheVersionCurrent(problemId, cacheVersion)) return
       if (cached && requestSequence === detailRequestSequence) {
         applyDetail(problemId, cached, true)
         detailFromCache.value = true
@@ -172,11 +175,11 @@ export const useDictationStore = defineStore('dictation', () => {
         dictationApi.getProblemDetail(problemId),
         dictationApi.getRecords(problemId, 1, 2),
       ])
-      if (requestSequence !== detailRequestSequence) return
+      if (requestSequence !== detailRequestSequence || !await isProblemCacheVersionCurrent(problemId, cacheVersion)) return
       if (detailResult.status === 'fulfilled') {
         applyDetail(problemId, detailResult.value, !usedCache)
         detailFromCache.value = false
-        void cacheDictationDetail(detailResult.value).catch(() => undefined)
+        void cacheDictationDetail(detailResult.value, cacheVersion).catch(() => undefined)
       } else if (!usedCache) {
         error.value = detailResult.reason instanceof Error ? detailResult.reason.message : '加载失败，请重试'
       }
@@ -220,19 +223,24 @@ export const useDictationStore = defineStore('dictation', () => {
     if (currentProblemId.value === null || answerVisible.value) return
     if (answerRequest) return answerRequest
     const problemId = currentProblemId.value
+    const cacheVersionTask = getProblemCacheVersion(problemId)
     const detailSequence = detailRequestSequence
     const sequence = ++answerRequestSequence
     answerRequest = (async () => {
+      let cacheVersion: Awaited<ReturnType<typeof getProblemCacheVersion>> | null = null
       try {
+        cacheVersion = await cacheVersionTask
         const answer = await dictationApi.viewAnswer(problemId, sessionId)
-        if (problemId !== currentProblemId.value || detailSequence !== detailRequestSequence || sequence !== answerRequestSequence) return
+        if (problemId !== currentProblemId.value || detailSequence !== detailRequestSequence || sequence !== answerRequestSequence || !await isProblemCacheVersionCurrent(problemId, cacheVersion)) return
         revealedAnswer.value = answer
         viewedAnswer.value = true
         answerVisible.value = true
-        void cacheDictationAnswer(problemId, answer).catch(() => undefined)
+        void cacheDictationAnswer(problemId, answer, cacheVersion).catch(() => undefined)
       } catch (cause) {
+        if (!cacheVersion || !await isProblemCacheVersionCurrent(problemId, cacheVersion)) return
         // 网络不可用时使用本地答案快照；联网后再补记一次查看留痕。
         const cached = await readDictationAnswer(problemId).catch(() => null)
+        if (!await isProblemCacheVersionCurrent(problemId, cacheVersion)) return
         if (!cached || problemId !== currentProblemId.value || detailSequence !== detailRequestSequence || sequence !== answerRequestSequence) {
           throw cause
         }

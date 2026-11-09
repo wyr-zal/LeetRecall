@@ -8,6 +8,7 @@ import type {
 } from '@/types/annotation'
 import { resolveCodeAnnotations } from '@/utils/codeAnchor'
 import { online } from '@/offline/network'
+import { getProblemCacheVersion, isProblemCacheVersionCurrent } from '@/offline/db'
 import { cacheAnnotations, readAnnotations } from '@/offline/repo'
 
 export const useCodeAnnotationStore = defineStore('codeAnnotation', () => {
@@ -24,6 +25,7 @@ export const useCodeAnnotationStore = defineStore('codeAnnotation', () => {
 
   async function load(nextProblemId: number, fullCode = ''): Promise<void> {
     const sequence = ++loadSequence
+    const cacheVersion = await getProblemCacheVersion(nextProblemId)
     problemId.value = nextProblemId
     code.value = fullCode
     annotations.value = []
@@ -32,17 +34,18 @@ export const useCodeAnnotationStore = defineStore('codeAnnotation', () => {
     let usedCache = false
     try {
       const cached = await readAnnotations(nextProblemId).catch(() => null)
+      if (!await isProblemCacheVersionCurrent(nextProblemId, cacheVersion)) return
       if (cached && sequence === loadSequence && problemId.value === nextProblemId) {
         annotations.value = cached
         usedCache = true
       }
       const loaded = await codeAnnotationApi.list(nextProblemId)
-      if (sequence === loadSequence && problemId.value === nextProblemId) {
+      if (sequence === loadSequence && problemId.value === nextProblemId && await isProblemCacheVersionCurrent(nextProblemId, cacheVersion)) {
         annotations.value = loaded
-        void cacheAnnotations(nextProblemId, loaded).catch(() => undefined)
+        void cacheAnnotations(nextProblemId, loaded, cacheVersion).catch(() => undefined)
       }
     } catch (cause) {
-      if (sequence === loadSequence && problemId.value === nextProblemId && !usedCache) {
+      if (sequence === loadSequence && problemId.value === nextProblemId && !usedCache && await isProblemCacheVersionCurrent(nextProblemId, cacheVersion)) {
         error.value = cause instanceof Error ? cause.message : '代码批注读取失败，请重试'
       }
     } finally {
