@@ -38,6 +38,8 @@ export interface OfflineMeta {
   schemaVersion: number
   problemCount: number
   lastCheckedAt: number
+  /** 每道题完整缓存最近一次由服务器确认/写入的时间；旧数据缺此项时触发在线刷新。 */
+  problemCacheTimes?: Record<string, number>
 }
 
 export interface OfflineQueueSnapshot<T> {

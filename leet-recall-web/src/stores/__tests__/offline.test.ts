@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
 import { createPinia, setActivePinia } from 'pinia'
-import { OFFLINE_PROBLEM_CACHE_CHANGED_EVENT, clearOfflineData, invalidateProblem, readAllProblems, readMeta, readProblem, replacePack } from '@/offline/db'
+import { OFFLINE_PROBLEM_CACHE_CHANGED_EVENT, clearOfflineData, invalidateProblem, readAllProblems, readMeta, readProblem, replacePack, writeMeta } from '@/offline/db'
 import { readDictationAnswer, readDictationDetail, readNote, readReviewDetail } from '@/offline/repo'
 import { markNetworkSuccess } from '@/offline/network'
 import { useOfflineStore } from '@/stores/offline'
@@ -47,26 +47,35 @@ describe('offline store', () => {
     fetchMock.mockResolvedValueOnce(packResponse())
     const store = useOfflineStore()
     await store.sync({ force: true })
+    const meta = await readMeta()
+    const expiredAt = Date.now() - 24 * 60 * 60 * 1000
+    await writeMeta({ ...meta!, problemCacheTimes: { '1': expiredAt } })
+    expect(await readProblem(1)).toEqual(createProblem(1, '两数之和'))
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 304 }))
 
-    await store.sync({ force: true })
+    await store.sync({ automatic: true })
 
     expect(fetchMock.mock.calls[1]?.[1]?.headers).toEqual({ 'If-None-Match': '"pack-v1"' })
     expect(store.problemCount).toBe(1)
     expect(store.error).toBe('')
+    expect(await readProblem(1)).toEqual(createProblem(1, '两数之和'))
+    expect((await readMeta())?.problemCacheTimes?.['1']).toBeGreaterThan(expiredAt)
   })
 
   it('断网时保留旧资料并切换为离线状态', async () => {
     fetchMock.mockResolvedValueOnce(packResponse())
     const store = useOfflineStore()
     await store.sync({ force: true })
+    const meta = await readMeta()
+    await writeMeta({ ...meta!, problemCacheTimes: { '1': Date.now() - 24 * 60 * 60 * 1000 } })
     fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'))
 
-    await store.sync({ force: true })
+    await store.sync({ automatic: true })
 
     expect(store.offline).toBe(true)
     expect(store.error).toContain('网络不可用')
     expect(await readAllProblems()).toHaveLength(1)
+    expect(await readProblem(1)).toEqual(createProblem(1, '两数之和'))
   })
 
   it('服务端 500 不切换离线状态，也不覆盖旧资料', async () => {
@@ -106,6 +115,12 @@ describe('offline store', () => {
     if (store.meta) store.meta = { ...store.meta, lastCheckedAt: 0 }
     await store.sync({ automatic: true })
     expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    const meta = await readMeta()
+    await writeMeta({ ...meta!, problemCacheTimes: { '1': Date.now() - 24 * 60 * 60 * 1000 } })
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 304 }))
+    await store.sync({ automatic: true })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('清除离线资料后题库与元数据都被移除', async () => {

@@ -16,6 +16,7 @@ const PACK_KEY = 'pack'
 const PACK_VERSION_KEY = 'pack-cache-version'
 const CACHE_EPOCH_KEY = 'cache-epoch'
 const PROBLEM_VERSION_PREFIX = 'problem-cache-version:'
+const OFFLINE_PROBLEM_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 const PAGE_EPOCH_KEY = 'leet-recall:offline-cache:page-epoch'
 const PROBLEM_PAGE_PREFIX = 'leet-recall:offline-cache:problem:'
 const PAGE_NOTICE_KEY = 'leet-recall:offline-cache:page-notice'
@@ -485,6 +486,56 @@ export async function writeMeta(meta: OfflineMeta): Promise<void> {
   await transactionDone(transaction)
 }
 
+function cacheTimesForProblems(problems: OfflineProblem[], cachedAt: number): Record<string, number> {
+  return Object.fromEntries(problems.map((problem) => [String(problem.problemId), cachedAt]))
+}
+
+function isProblemCacheFresh(meta: OfflineMeta | undefined, problemId: number, now = Date.now()): boolean {
+  const cachedAt = meta?.problemCacheTimes?.[String(problemId)]
+  return typeof cachedAt === 'number'
+    && Number.isFinite(cachedAt)
+    && cachedAt >= 0
+    && now >= cachedAt
+    && now - cachedAt < OFFLINE_PROBLEM_CACHE_TTL_MS
+}
+
+/** 整包 304 表示服务器确认缓存内容未变，因此为当前整包续期。 */
+export async function refreshProblemCacheTimes(validatedAt = Date.now()): Promise<OfflineMeta | null> {
+  const database = await openDatabase()
+  if (!database) return null
+  const transaction = database.transaction([PROBLEM_STORE, META_STORE], 'readwrite')
+  const problemsRequest = transaction.objectStore(PROBLEM_STORE).getAll()
+  const metaStore = transaction.objectStore(META_STORE)
+  const metaRequest = metaStore.get(PACK_KEY)
+  let problems: OfflineProblem[] | null = null
+  let currentMeta: OfflineMeta | undefined
+  let metaReady = false
+  let nextMeta: OfflineMeta | null = null
+  let saved = false
+  const saveWhenReady = () => {
+    if (saved || problems === null || !metaReady) return
+    saved = true
+    if (!currentMeta) return
+    nextMeta = {
+      ...currentMeta,
+      lastCheckedAt: validatedAt,
+      problemCacheTimes: cacheTimesForProblems(problems, validatedAt),
+    }
+    metaStore.put(nextMeta, PACK_KEY)
+  }
+  problemsRequest.onsuccess = () => {
+    problems = problemsRequest.result as OfflineProblem[]
+    saveWhenReady()
+  }
+  metaRequest.onsuccess = () => {
+    currentMeta = metaRequest.result as OfflineMeta | undefined
+    metaReady = true
+    saveWhenReady()
+  }
+  await transactionDone(transaction)
+  return nextMeta
+}
+
 export async function readProblem(problemId: number): Promise<OfflineProblem | null> {
   if (isProblemInvalidated(problemId)) return null
   const database = await openDatabase()
@@ -501,6 +552,19 @@ export async function readAllProblems(): Promise<OfflineProblem[]> {
   const transaction = database.transaction(PROBLEM_STORE, 'readonly')
   const problems = await requestResult(transaction.objectStore(PROBLEM_STORE).getAll()) as OfflineProblem[]
   return problems.filter((problem) => !isProblemInvalidated(problem.problemId))
+}
+
+/** 过期资料仍可离线兜底，但必须跳过短间隔并立即尝试联网确认。 */
+export async function hasExpiredProblemCache(): Promise<boolean> {
+  const database = await openDatabase()
+  if (!database) return false
+  const transaction = database.transaction([PROBLEM_STORE, META_STORE], 'readonly')
+  const problemsRequest = requestResult(transaction.objectStore(PROBLEM_STORE).getAll())
+  const metaRequest = requestResult(transaction.objectStore(META_STORE).get(PACK_KEY))
+  const [problems, meta] = await Promise.all([problemsRequest, metaRequest]) as [OfflineProblem[], OfflineMeta | undefined]
+  const cachedMeta = meta as OfflineMeta | undefined
+  if (problems.length !== (cachedMeta?.problemCount ?? 0)) return true
+  return problems.some((problem) => !isProblemCacheFresh(cachedMeta, problem.problemId))
 }
 
 /**
@@ -523,7 +587,8 @@ export async function replacePack(
     const metaStore = transaction.objectStore(META_STORE)
     problems.clear()
     for (const problem of pack.problems) problems.put(problem)
-    metaStore.put(meta, PACK_KEY)
+    const cachedAt = meta.lastCheckedAt || meta.downloadedAt || Date.now()
+    metaStore.put({ ...meta, problemCacheTimes: cacheTimesForProblems(pack.problems, cachedAt) }, PACK_KEY)
     const pageEpoch = bumpPageEpoch()
     replacedVersion = {
       epoch: expectedVersion.epoch + 1,
@@ -544,7 +609,7 @@ export async function replacePack(
 }
 
 /** 单题变动后原整包 ETag 已失效，计数和大小按当前实际缓存计算。 */
-function updatePackMeta(transaction: IDBTransaction, downloadedAt?: number): void {
+function updatePackMeta(transaction: IDBTransaction, downloadedAt?: number, refreshedProblemId?: number): void {
   const problems = transaction.objectStore(PROBLEM_STORE).getAll()
   const store = transaction.objectStore(META_STORE)
   const meta = store.get(PACK_KEY)
@@ -553,6 +618,14 @@ function updatePackMeta(transaction: IDBTransaction, downloadedAt?: number): voi
     const items = problems.result as OfflineProblem[]
     if (!current && items.length === 0) return
     const pack = { schemaVersion: OFFLINE_SCHEMA_VERSION, problemCount: items.length, problems: items }
+    const problemCacheTimes: Record<string, number> = {}
+    for (const item of items) {
+      const key = String(item.problemId)
+      const cachedAt = item.problemId === refreshedProblemId
+        ? downloadedAt
+        : current?.problemCacheTimes?.[key]
+      if (typeof cachedAt === 'number' && Number.isFinite(cachedAt)) problemCacheTimes[key] = cachedAt
+    }
     store.put({
       schemaVersion: OFFLINE_SCHEMA_VERSION,
       downloadedAt: downloadedAt ?? current?.downloadedAt ?? 0,
@@ -560,6 +633,7 @@ function updatePackMeta(transaction: IDBTransaction, downloadedAt?: number): voi
       problemCount: items.length,
       packBytes: new Blob([JSON.stringify(pack)]).size,
       lastCheckedAt: 0,
+      problemCacheTimes,
     } satisfies OfflineMeta, PACK_KEY)
   }
 }
@@ -613,7 +687,7 @@ export async function cacheImportedProblem(
     pageAccepted = true
     transaction.objectStore(PROBLEM_STORE).put(problem)
     meta.put(version.version + 1, problemVersionKey(problem.problemId))
-    updatePackMeta(transaction, Date.now())
+    updatePackMeta(transaction, Date.now(), problem.problemId)
   })
   await transactionDone(transaction)
   if (!isCurrent() || !pageAccepted) return false

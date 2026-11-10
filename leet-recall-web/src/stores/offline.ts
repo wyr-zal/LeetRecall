@@ -6,10 +6,12 @@ import {
   clearOfflineData,
   getPackCacheVersion,
   getProblemCacheVersion,
+  hasExpiredProblemCache,
   invalidateProblem,
   isPackCacheVersionCurrent,
   readMeta,
   readProblem,
+  refreshProblemCacheTimes,
   replacePack,
   requestStoragePersistence,
   storageEstimate,
@@ -116,19 +118,21 @@ export const useOfflineStore = defineStore('offline', () => {
       error.value = '当前浏览器不支持离线存储'
       return
     }
-    // 首次下载不受自动更新开关影响；关闭后已有资料只能手动更新。
-    if (options?.automatic && !autoUpdate.value && hasPack.value) return
-    const lastCheckedAt = meta.value?.lastCheckedAt ?? 0
-    if (!options?.force && lastCheckedAt && Date.now() - lastCheckedAt < AUTO_CHECK_INTERVAL) return
+    const task = (async () => {
+      // 在首次异步等待前捕获版本；导入若随后发生，旧整包响应必须被拒绝。
+      const packVersion = await getPackCacheVersion()
+      const cacheExpired = await hasExpiredProblemCache()
+      // 关闭自动更新时跳过常规检查；已过期的资料仍需在线确认。
+      if (options?.automatic && !autoUpdate.value && hasPack.value && !cacheExpired) return
+      const lastCheckedAt = meta.value?.lastCheckedAt ?? 0
+      if (!options?.force && lastCheckedAt && Date.now() - lastCheckedAt < AUTO_CHECK_INTERVAL && !cacheExpired) return
 
-    syncTask = (async () => {
       const problemId = options?.problemId
       syncing.value = true
       error.value = ''
       const controller = new AbortController()
       const timeout = window.setTimeout(() => controller.abort(), 30_000)
       try {
-        const packVersion = await getPackCacheVersion()
         const problemVersion = problemId === undefined ? null : await getProblemCacheVersion(problemId)
         const response = await fetch('/api/offline/pack', {
           headers: problemId === undefined && meta.value?.etag ? { 'If-None-Match': meta.value.etag } : undefined,
@@ -140,9 +144,7 @@ export const useOfflineStore = defineStore('offline', () => {
         if (response.status === 304) {
           if (problemId !== undefined) throw new Error('未取得导入题目的新资料，请重试')
           if (!await isPackCacheVersionCurrent(packVersion)) return
-          if (meta.value) {
-            meta.value = { ...meta.value, lastCheckedAt: Date.now() }
-          }
+          meta.value = await refreshProblemCacheTimes() ?? await readMeta()
           return
         }
         if (!response.ok) throw new Error(`离线资料下载失败（HTTP ${response.status}）`)
@@ -167,7 +169,7 @@ export const useOfflineStore = defineStore('offline', () => {
             if (!packVersion.readable) throw new Error('无法校验离线资料版本，请重试更新。')
             return
           }
-          meta.value = nextMeta
+          meta.value = await readMeta()
         } else {
           const problem = pack.problems.find((item) => item.problemId === problemId)
           if (!problem) throw new Error('离线资料包中缺少导入题目，请重试')
@@ -204,10 +206,14 @@ export const useOfflineStore = defineStore('offline', () => {
       } finally {
         window.clearTimeout(timeout)
         syncing.value = false
-        syncTask = null
       }
     })()
-    return syncTask
+    syncTask = task
+    try {
+      await task
+    } finally {
+      if (syncTask === task) syncTask = null
+    }
   }
 
   /** 由确认导入成功后的回调调用；整包只用于取完整字段，落盘仅涉及导入题。 */

@@ -6,6 +6,7 @@ import {
   clearOfflineData,
   getPackCacheVersion,
   getProblemCacheVersion,
+  hasExpiredProblemCache,
   invalidateProblem,
   isProblemCacheVersionCurrent,
   readAllProblems,
@@ -15,6 +16,7 @@ import {
   replacePack,
   searchOfflineProblems,
   updateProblem,
+  writeMeta,
   writeQueueSnapshot,
 } from '@/offline/db'
 import { createMeta, createPack, createProblem } from '@/tests/offlineFixtures'
@@ -89,6 +91,39 @@ describe('offline db', () => {
     expect(await readProblem(1)).toEqual(fresh)
     expect((await readMeta())?.problemCount).toBe(2)
     expect((await readMeta())?.packBytes).toBeGreaterThan(0)
+  })
+
+  it('题目缓存过期后仍可离线兜底，补回单题不会续期其它题', async () => {
+    const first = createProblem(1, '第一题')
+    const second = createProblem(2, '第二题')
+    await replacePack(createPack([first, second]), createMeta(2))
+    const meta = await readMeta()
+    const now = Date.now()
+    const expiredAt = now - 24 * 60 * 60 * 1000
+    await writeMeta({
+      ...meta!,
+      problemCacheTimes: { '1': now, '2': expiredAt },
+    })
+
+    const refreshed = { ...first, coreIdea: '刚刚更新的思路' }
+    expect(await cacheImportedProblem(refreshed, await getProblemCacheVersion(1))).toBe(true)
+
+    expect(await hasExpiredProblemCache()).toBe(true)
+    expect(await readProblem(1)).toEqual(refreshed)
+    expect(await readProblem(2)).toEqual(second)
+    expect((await readAllProblems()).map((problem) => problem.problemId)).toEqual([1, 2])
+    expect((await readMeta())?.problemCacheTimes?.['2']).toBe(expiredAt)
+  })
+
+  it('没有缓存时间的旧版题目保留离线可读并要求联网刷新', async () => {
+    const oldProblem = createProblem(1, '旧缓存')
+    await replacePack(createPack([oldProblem]), createMeta(1))
+    const meta = await readMeta()
+    await writeMeta({ ...meta!, problemCacheTimes: undefined })
+
+    expect(await hasExpiredProblemCache()).toBe(true)
+    expect(await readProblem(1)).toEqual(oldProblem)
+    expect(await readAllProblems()).toEqual([oldProblem])
   })
 
   it('导入前开始的整包响应不能重新写回旧题目', async () => {
@@ -250,8 +285,12 @@ describe('offline db', () => {
         request.onsuccess = () => resolve(request.result)
         request.onerror = () => reject(request.error)
       })
-      const transaction = database.transaction('problems', 'readwrite')
+      const transaction = database.transaction(['problems', 'meta'], 'readwrite')
       transaction.objectStore('problems').put(freshProblem)
+      transaction.objectStore('meta').put({
+        ...createMeta(1),
+        problemCacheTimes: { '1': Date.now() },
+      }, 'pack')
       await new Promise<void>((resolve, reject) => {
         transaction.oncomplete = () => resolve()
         transaction.onerror = () => reject(transaction.error)
